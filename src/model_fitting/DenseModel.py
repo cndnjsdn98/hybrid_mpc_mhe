@@ -5,7 +5,7 @@ from torch.optim import Adam
 
 class DenseModel(nn.Module):
     def __init__(self, n_inputs, n_hidden, n_output, activation_hidden, activation_out, dropout, l2):
-        super(PyTorchModel, self).__init__()
+        super(DenseModel, self).__init__()
         
         # Activation functions
         self.activation_hidden = self._get_activation_function(activation_hidden)
@@ -160,4 +160,44 @@ def optimize(model, optimizer, criterion, train_loader, val_loader=None,
     
     print("Training complete.")
     return model, history
+
+from torch.utils.data import DataLoader, TensorDataset
+import torch
+
+# Example data
+X_train = torch.randn(1000, 10)  # 1000 samples, 10 features
+y_train = torch.randn(1000, 1)   # 1000 targets, 1 output dimension
+X_val = torch.randn(200, 10)     # Validation set
+y_val = torch.randn(200, 1)
+
+# Create DataLoaders
+train_dataset = TensorDataset(X_train, y_train)
+val_dataset = TensorDataset(X_val, y_val)
+
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=32)
+
+# Train the model
+model, optimizer, criterion = build_dense(
+    n_inputs=10, 
+    n_hidden=[64, 32], 
+    n_output=1, 
+    activation_out='relu', 
+    activation_hidden='elu', 
+    lrate=0.001, 
+    loss='mse', 
+    dropout=0.5, 
+    l2=1e-4
+)
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+trained_model, history = optimize(
+    model, 
+    optimizer, 
+    criterion, 
+    train_loader, 
+    val_loader=val_loader, 
+    num_epochs=20, 
+    device=device
+)
 
