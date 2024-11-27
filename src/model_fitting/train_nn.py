@@ -118,9 +118,11 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     lrate = model_params.get("lrate", 1e-3)
     
     # Create Neural-ODE Model
-    model_name = "%s_%s_neural_ode"%("gz" if env.lower() == "gazebo" else "rt", 
-                                     quad_name)
-    neuralODE = NeuralODE(n_inputs, 
+    model_name = "%s_%s_%s"%("gz" if env.lower() == "gazebo" else "rt", 
+                              x_features_,
+                              y_features_)
+    neuralODE = NeuralODE(model_name,
+                          n_inputs, 
                           n_hidden,
                           n_output, 
                           activation_hidden, 
@@ -164,7 +166,7 @@ if __name__ == '__main__':
         'activation_out': 'linear',
         'dropout': None,
         'batch_normalization': False,
-        'epochs': 5000,
+        'epochs': 10,
         'lrate': 1e-2, 
     }
     train_node(model_params, data_params)

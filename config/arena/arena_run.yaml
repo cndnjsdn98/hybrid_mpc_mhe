@@ -1,0 +1,32 @@
+control_freq_factor: 5
+
+# Topic Names
+pose_topic: "/mavros/vision_pose/pose"
+imu_topic: "/mavros/imu/data_raw"
+
+# Landing options
+land_z: 0.15
+land_dz: 0.15
+land_z_thr: 0.15
+
+# Approaching Init. Pos.
+init_thr: 0.45
+init_v: 0.1
+
+# Mass change values
+change_mass: 0
+
+# PID Position Controller Weights
+throttle_kp: 12.
+throttle_ki: 0.0
+throttle_kd: 3
+
+position_kp: 3.
+position_ki: 0.0
+position_kd: 2.5
+
+body_rate_kp: 3
+body_rate_ki: 0.
+body_rate_kd: 0.00
+
+sensor_noise: false

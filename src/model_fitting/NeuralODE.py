@@ -1,13 +1,31 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
 
 import torch
 import torch.nn as nn
 
+from src.utils.utils import safe_mkdir_recursive
+from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 class NeuralODE(nn.Module):
-    def __init__(self, n_inputs, n_hidden, n_output, activation_hidden, activation_out, dropout=None, batch_normalization=False):
+    def __init__(self, model_name, n_inputs, n_hidden, n_output, activation_hidden, activation_out, dropout=None, batch_normalization=False):
         super(NeuralODE, self).__init__()
-        
+        self.model_name = model_name
+        self.model_dir = os.path.join(DirConf.MODELS_DIR, self.model_name)
+        safe_mkdir_recursive(self.model_dir, overwrite=False)
+
+        self.model_params = {
+            'model_name': model_name,
+            'n_inputs': n_inputs,
+            'n_hidden': n_hidden,
+            'n_output': n_output,
+            'activation_hidden': activation_hidden,
+            'activation_out': activation_out,
+            'dropout': dropout,
+            'batch_normalization': batch_normalization,
+        }
+
         # Activation functions
         self.activation_hidden = self._get_activation_function(activation_hidden)
         if activation_out.lower() == "linear":
@@ -34,6 +52,7 @@ class NeuralODE(nn.Module):
         # Wrap as Sequential
         self.network = nn.Sequential(*layers)
         print(self.network)
+
     def forward(self, t, x):
         return self.network(x)
     
@@ -45,7 +64,7 @@ class NeuralODE(nn.Module):
             'elu': nn.ELU(),
             'leaky_relu': nn.LeakyReLU()
         }
-        return activations.get(activation.lower(), nn.Identity())
+        return activations[activation.lower(), nn.Identity())
 
     def fit(self, 
             train_init,
@@ -103,10 +122,8 @@ class NeuralODE(nn.Module):
             self.viz_results(train_out[1], pred_out[1], valid_out[1], pred_valid[1])
         if viz_loss_curve:
             self.visualize_loss_curve()
-        if viz_results or viz_loss_curve:
-            plt.show()
 
-    def visualize_loss_curve(self):
+    def visualize_loss_curve(self, fig_format="pdf"):
         """
         Visualize the loss curve of the training and validation
         """
@@ -130,8 +147,14 @@ class NeuralODE(nn.Module):
         ax.set_title('Training History')
         ax.legend()
         plt.tight_layout()
+        # Save figure
+        fig_save_dir = os.path.join(self.model_dir, "loss_curve."+fig_format)
+        fig.savefig(fig_save_dir, dpi=None, facecolor='w', edgecolor='w',
+                    orientation='portrait', format=fig_format,
+                    transparent=True, bbox_inches='tight', metadata=None, pad_inches=0.01)
+        plt.close(fig)
 
-    def viz_results(self, train_out, pred_train, valid_out, pred_valid):
+    def viz_results(self, train_out, pred_train, valid_out, pred_valid, fig_format="pdf"):
         """
         Visualize the prediction results of the model
         """
@@ -212,7 +235,53 @@ class NeuralODE(nn.Module):
             ax_valid[2, 1].set_ylabel('e_wz [rad/s]')
             fig_valid.suptitle('Validation')
             plt.tight_layout()
+        # Save figure
+        fig_train_save_dir = os.path.join(self.model_dir, "loss_curve."+fig_format)
+        fig_train.savefig(fig_train_save_dir, dpi=None, facecolor='w', edgecolor='w',
+                    orientation='portrait', format=fig_format,
+                    transparent=True, bbox_inches='tight', metadata=None, pad_inches=0.01)
+        plt.close(fig_train)
+        fig_valid_save_dir = os.path.join(self.model_dir, "loss_curve."+fig_format)
+        fig_valid.savefig(fig_valid_save_dir, dpi=None, facecolor='w', edgecolor='w',
+                    orientation='portrait', format=fig_format,
+                    transparent=True, bbox_inches='tight', metadata=None, pad_inches=0.01)
+        plt.close(fig_valid)
 
+    def save_model(self):
+        '''
+        Save Model as state_dict
+        '''
+        torch.save(self.state_dict(), self.model_dir, "model.pth")
+        with open(os.path.join(self.model_dir, "model_params.pkl"), "wb") as fp:
+            pickle.dump(self.model_params, fp)
+
+def load_model(model_name):
+    '''
+    Load Model
+    '''
+    model_path = os.path.join(DirConf.MODELS_DIR, model_name)
+    with open(os.path.join(model_path, "model_params.pkl"), "rb") as fp:
+        model_params =  pickle.load(fp)
+    
+    n_inputs = model_params["x_features"]
+    n_output = model_params["y_features"]
+    n_hidden = model_params["n_hidden"]
+    activation_hidden = model_params["activation_hidden"]
+    activation_out = model_params["activation_out"]
+    dropout = model_params["dropout"]
+    batch_normalization = model_params["batch_normalization"]
+
+    neuralODE = NeuralODE(model_name,
+                          n_inputs, 
+                          n_hidden,
+                          n_output, 
+                          activation_hidden, 
+                          activation_out, 
+                          dropout=dropout, 
+                          batch_normalization=batch_normalization)
+    neuralODE.load_state_dict(torch.load(os.path.join(model_path, "model.pth"), weights_only=True))
+
+    return neuralODE
 # if __name__ == '__main__':
 #    '''
    

@@ -22,6 +22,6 @@ class DirectoryConfig:
     _dir_path = os.path.dirname(os.path.realpath(__file__))
     CONFIG_DIR = os.path.join(_dir_path, '..', '..', 'config')
     FLIGHT_DATA_DIR = os.path.join(_dir_path, '..', '..', 'results')
-    GP_MODELS_DIR = os.path.join(_dir_path, '..', '..', 'gp_models')
+    MODELS_DIR = os.path.join(_dir_path, '..', '..', 'models')
     ACADOS_MODEL_DIR = os.path.join(_dir_path, '..', '..', 'acados_ocp')
     QUAD_PARAM_DIR = os.path.join(_dir_path, '..', '..', 'quads')
