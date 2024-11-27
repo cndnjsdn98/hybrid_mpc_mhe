@@ -17,12 +17,9 @@
 #################################################
 # Do not change this line unless you have your own python/tensorflow/keras set up
 
-. /home/cs504306/tf_setup.sh
-# conda activate /home/cs504306/miniconda3/envs/fault_id
-conda activate fault_id_tf
-
-module load cuDNN/8.9.2.26-CUDA-12.2.0
+module load Python
+source $HOME/node/bin/activate
 
 export PYTHONPATH=/home/cs504306/NODE-MPC-MHE/:$PYTHONPATH
 
-python test_lstm.py @exp_lstm.txt @lstm_100.txt
+python train_nn.py
