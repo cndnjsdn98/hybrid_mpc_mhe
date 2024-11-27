@@ -100,7 +100,7 @@ class NeuralODE(nn.Module):
 
         if save_training_history:
             # [[epoch, train_loss, valid_loss]]
-            self.loss_hist = np.zeros((3, int(epochs/valid_freq)))
+            self.loss_hist = np.zeros((3, np.ceil(epochs/valid_freq)))
 
         for i in range(epochs):
             optimizer.zero_grad()
