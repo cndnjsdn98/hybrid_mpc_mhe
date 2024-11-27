@@ -1,0 +1,12 @@
+# MPC Costs
+q_p: 50
+q_q: 5
+q_v: 1
+q_r: 1
+qt_factor: 0
+r_mpc: 1
+
+# GP Model
+x_features: [7, 8, 9]
+y_features: [7, 8, 9]
+gp_model_name: "a_hummingbird_mpc_-1-20"

@@ -49,3 +49,16 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+
+# Results
+results/*
+
+# Pyc cache
+*/__pycache__/
+
+# vscode
+.vscode/
+
+**/libtorch/
+
+gp_models/**

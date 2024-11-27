@@ -1,0 +1,12 @@
+# MPC Costs
+q_p: 30
+q_q: 20
+q_v: 10
+q_r: 10
+qt_factor: 0
+r_mpc: 0.1
+
+# GP Model
+x_features: [7, 8, 9]
+y_features: [7, 8, 9]
+gp_model_name: ""
