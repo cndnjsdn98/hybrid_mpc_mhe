@@ -12,7 +12,7 @@
 #SBATCH --job-name=NODE
 #SBATCH --mail-user=w.choo@ou.edu
 #SBATCH --mail-type=ALL
-#SBATCH --chdir=/home/cs504306/NODE-MPC-MHE/model_fitting/
+#SBATCH --chdir=/home/cs504306/NODE-MPC-MHE/src/model_fitting/
 
 #################################################
 # Do not change this line unless you have your own python/tensorflow/keras set up
