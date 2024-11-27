@@ -17,6 +17,7 @@ PyQt5
 PySide2
 defusedxml
 pykalman
+wheel
 setuptools>=68.1
 scikit-build>=0.17
 cmake>=3.27
