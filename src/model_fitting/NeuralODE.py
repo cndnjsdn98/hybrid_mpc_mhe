@@ -64,7 +64,7 @@ class NeuralODE(nn.Module):
             'elu': nn.ELU(),
             'leaky_relu': nn.LeakyReLU()
         }
-        return activations[activation.lower(), nn.Identity())
+        return activations.get(activation.lower(), nn.Identity())
 
     def fit(self, 
             train_init,
