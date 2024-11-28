@@ -51,6 +51,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         - type: Int
     """
     print("Begin...")
+    print(gpu)
     if gpu is not None:
         device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
     else:
@@ -172,4 +173,4 @@ if __name__ == '__main__':
         'lrate': 1e-2, 
     }
     print(data_params, model_params)
-    # train_node(model_params, data_params)
+    train_node(model_params, data_params, gpu=None)
