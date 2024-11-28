@@ -12,7 +12,7 @@
 #SBATCH --job-name=NODE
 #SBATCH --mail-user=w.choo@ou.edu
 #SBATCH --mail-type=ALL
-#SBATCH --chdir=/home/cs504306/NODE-MPC-MHE/
+#SBATCH --chdir=/home/cs504306/NODE-MPC-MHE/src/model_fitting/
 
 #################################################
 # Do not change this line unless you have your own python/tensorflow/keras set up
@@ -23,4 +23,4 @@ source /home/cs504306/node/bin/activate
 
 export PYTHONPATH=/home/cs504306/NODE-MPC-MHE/:$PYTHONPATH
 
-python ./src/model_fitting/train_nn.py
+python ./train_nn.py
