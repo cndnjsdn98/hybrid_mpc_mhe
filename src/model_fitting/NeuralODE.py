@@ -85,11 +85,12 @@ class NeuralODE(nn.Module):
             save_training_history=True,
             viz_loss_curve=True,
             viz_results=True):
+        print("fit")
         if adjoint:
             from torchdiffeq import odeint_adjoint as odeint
         else:
             from torchdiffeq import odeint
-            
+        return    
         self.to(device)
         if train_cmd is not None:
             train_wrapper = lambda t, x: self(t, torch.cat((x, train_cmd), dim=-1))

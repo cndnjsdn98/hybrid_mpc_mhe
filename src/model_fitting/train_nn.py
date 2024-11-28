@@ -136,8 +136,6 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     # Train model
     optimizer = Adam(neuralODE.parameters(), lr=lrate)
     loss_fcn = nn.MSELoss()
-    return
-    loss_fcn = None
     neuralODE.fit(train_init,
                   train_cmd, 
                   train_out, 
