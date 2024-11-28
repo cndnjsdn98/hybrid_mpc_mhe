@@ -132,10 +132,12 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
                           dropout=dropout, 
                           batch_normalization=batch_normalization)
     print("Model Created. Initiate Training...")
-    
+
     # Train model
     optimizer = Adam(neuralODE.parameters(), lr=lrate)
-    loss_fcn = nn.MSELoss()
+    return
+    # loss_fcn = nn.MSELoss()
+    loss_fcn = None
     neuralODE.fit(train_init,
                   train_cmd, 
                   train_out, 
