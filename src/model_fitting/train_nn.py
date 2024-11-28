@@ -50,6 +50,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     - n_integration: Number of integrations in to the future points utilized for single training instance
         - type: Int
     """
+    print("Begin...")
     if gpu is not None:
         device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
     else:
