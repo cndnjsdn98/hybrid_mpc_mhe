@@ -169,7 +169,7 @@ if __name__ == '__main__':
         'activation_out': 'linear',
         'dropout': None,
         'batch_normalization': False,
-        'epochs': 1000,
+        'epochs': 10,
         'lrate': 1e-2, 
     }
     print(data_params, model_params)
