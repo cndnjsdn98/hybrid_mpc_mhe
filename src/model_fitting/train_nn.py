@@ -51,12 +51,11 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         - type: Int
     """
     print("Begin...")
-    print(gpu)
     if gpu is not None:
         device = 'cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu'
     else:
         device = 'cpu'
-    return
+    
     # Flight Data Parameters
     print("Loading Flight Data...")
     v = [7, 8, 9]
@@ -72,7 +71,6 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         x_features.extend(v)
     if 'w' in x_features_:
         x_features.extend(w)
-
     y_features_ = data_params.get('x_features', 'vw')
     y_features = []
     if 'v' in y_features_:
@@ -80,7 +78,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     if 'w' in y_features_:
         y_features.extend(w)
     n_integration = data_params.get("n_integration", 2)
-
+    return 
     # Load Dataset
     flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
     train_ds_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, train_trajectory_name)
