@@ -173,4 +173,5 @@ if __name__ == '__main__':
         'lrate': 1e-2, 
     }
     print(data_params, model_params)
-    train_node(model_params, data_params, gpu=None)
+
+    # train_node(model_params, data_params, gpu=None)
