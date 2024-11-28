@@ -90,8 +90,7 @@ class NeuralODE(nn.Module):
         else:
             from torchdiffeq import odeint  
         self.to(device)
-        print("to device")
-        return
+
         if train_cmd is not None:
             train_wrapper = lambda t, x: self(t, torch.cat((x, train_cmd), dim=-1))
             valid_wrapper = lambda t, x: self(t, torch.cat((x, valid_cmd), dim=-1))
@@ -102,7 +101,8 @@ class NeuralODE(nn.Module):
         if save_training_history:
             # [[epoch, train_loss, valid_loss]]
             self.loss_hist = np.zeros((3, int(np.ceil(epochs/valid_freq))))
-
+        print("Begin Iteration")
+        return
         for i in range(epochs):
             optimizer.zero_grad()
             pred_out = odeint(train_wrapper, train_init, train_times).to(device)
