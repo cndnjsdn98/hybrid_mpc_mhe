@@ -167,6 +167,6 @@ if __name__ == '__main__':
         'dropout': None,
         'batch_normalization': False,
         'epochs': 10000,
-        'lrate': 1e-3, 
+        'lrate': 1e-2, 
     }
     train_node(model_params, data_params)
