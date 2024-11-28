@@ -108,7 +108,6 @@ class NeuralODE(nn.Module):
             loss = loss_fcn(pred_out, train_out)
             loss.backward()
             optimizer.step()
-            return
             if i % valid_freq == 0:
                 with torch.no_grad():
                     pred_valid = odeint(valid_wrapper, valid_init, valid_times).to(device)
