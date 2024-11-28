@@ -101,8 +101,7 @@ class NeuralODE(nn.Module):
         if save_training_history:
             # [[epoch, train_loss, valid_loss]]
             self.loss_hist = np.zeros((3, int(np.ceil(epochs/valid_freq))))
-        print("Begin Iteration")
-        return
+
         for i in range(epochs):
             optimizer.zero_grad()
             pred_out = odeint(train_wrapper, train_init, train_times).to(device)
@@ -123,7 +122,8 @@ class NeuralODE(nn.Module):
             self.viz_results(train_out[1], pred_out[1], valid_out[1], pred_valid[1])
         if viz_loss_curve:
             self.visualize_loss_curve()
-
+        return
+    
     def visualize_loss_curve(self, fig_format="pdf"):
         """
         Visualize the loss curve of the training and validation
