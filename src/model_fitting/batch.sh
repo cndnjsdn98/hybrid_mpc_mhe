@@ -5,7 +5,7 @@
 #SBATCH --partition=normal
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=50G
+#SBATCH --mem=90G
 #SBATCH --output=results/node_%j_stdout.txt
 #SBATCH --error=results/node_%j_stderr.txt
 #SBATCH --time=20:00:00
