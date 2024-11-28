@@ -56,7 +56,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         device = 'cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu'
     else:
         device = 'cpu'
-
+    return
     # Flight Data Parameters
     print("Loading Flight Data...")
     v = [7, 8, 9]
@@ -169,9 +169,10 @@ if __name__ == '__main__':
         'activation_out': 'linear',
         'dropout': None,
         'batch_normalization': False,
-        'epochs': 10000,
+        'epochs': 1000,
         'lrate': 1e-2, 
     }
     print(data_params, model_params)
 
-    # train_node(model_params, data_params, gpu=None)
+    neuralODE = train_node(model_params, data_params, gpu=None)
+    neuralODE.save_model()
