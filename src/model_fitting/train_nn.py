@@ -56,6 +56,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         device = torch.device('cpu')
 
     # Flight Data Parameters
+    print("Loading Flight Data...")
     v = [7, 8, 9]
     w = [10, 11, 12]
     quad_name = data_params.get("quad_name", 'hummingbird').lower()
@@ -86,7 +87,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     valid_ds = FlightDataset(valid_ds_dir, n_integration)
     # train_ds.visualize()
     # valid_ds.visualize()
-
+    print("Flight Dataset Loaded...")
     # Retrieve Training Data
     train_init, train_out, train_times = train_ds.get_ds(x_features, y_features)
     train_init = torch.Tensor(train_init[:, np.newaxis, :]).to(device)
@@ -103,7 +104,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     if 'u' in x_features_:
         valid_cmd = valid_ds.get_cmd()
         valid_cmd = torch.Tensor(valid_cmd).to(device)
-
+    print("Training and Validation Set initialized...")
     # Model Parameters
     n_inputs = len(x_features)
     if 'u' in x_features_:
@@ -116,7 +117,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     batch_normalization = model_params.get("batch_normalization", False)
     epochs = model_params.get("epochs", 1000)
     lrate = model_params.get("lrate", 1e-3)
-    
+    print("Creating Neural ODE Network")
     # Create Neural-ODE Model
     model_name = "%s_%s_%s"%("gz" if env.lower() == "gazebo" else "rt", 
                               x_features_,
@@ -129,7 +130,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
                           activation_out, 
                           dropout=dropout, 
                           batch_normalization=batch_normalization)
-    
+    print("Model Created. Initiate Training...")
     # Train model
     optimizer = Adam(neuralODE.parameters(), lr=lrate)
     loss_fcn = nn.MSELoss()
