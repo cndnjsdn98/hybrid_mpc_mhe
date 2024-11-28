@@ -53,9 +53,9 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     print("Begin...")
     print(gpu)
     if gpu is not None:
-        device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
+        device = 'cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu'
     else:
-        device = torch.device('cpu')
+        device = 'cpu'
 
     # Flight Data Parameters
     print("Loading Flight Data...")
