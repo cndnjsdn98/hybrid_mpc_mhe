@@ -252,7 +252,7 @@ class NeuralODE(nn.Module):
         '''
         Save Model as state_dict
         '''
-        torch.save(self.state_dict(), self.model_dir, "model.pth")
+        torch.save(self.state_dict(), os.path.join(self.model_dir, "model.pth"))
         with open(os.path.join(self.model_dir, "model_params.pkl"), "wb") as fp:
             pickle.dump(self.model_params, fp)
 
