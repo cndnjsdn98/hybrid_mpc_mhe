@@ -171,4 +171,5 @@ if __name__ == '__main__':
         'epochs': 10000,
         'lrate': 1e-2, 
     }
-    train_node(model_params, data_params)
+    print(data_params, model_params)
+    # train_node(model_params, data_params)
