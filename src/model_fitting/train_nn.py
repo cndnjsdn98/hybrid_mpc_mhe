@@ -118,7 +118,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     epochs = model_params.get("epochs", 1000)
     lrate = model_params.get("lrate", 1e-3)
     print("Creating Neural ODE Network")
-    return
+    
     # Create Neural-ODE Model
     model_name = "%s_%s_%s"%("gz" if env.lower() == "gazebo" else "rt", 
                               x_features_,
@@ -132,6 +132,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
                           dropout=dropout, 
                           batch_normalization=batch_normalization)
     print("Model Created. Initiate Training...")
+    return
     # Train model
     optimizer = Adam(neuralODE.parameters(), lr=lrate)
     loss_fcn = nn.MSELoss()
