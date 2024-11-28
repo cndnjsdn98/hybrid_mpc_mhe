@@ -17,7 +17,7 @@
 #################################################
 # Do not change this line unless you have your own python/tensorflow/keras set up
 
-module load Python
+# module load Python
 source $HOME/node/bin/activate
 
 export PYTHONPATH=/home/cs504306/NODE-MPC-MHE/:$PYTHONPATH
