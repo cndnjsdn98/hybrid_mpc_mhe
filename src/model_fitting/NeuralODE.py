@@ -236,12 +236,12 @@ class NeuralODE(nn.Module):
             fig_valid.suptitle('Validation')
             plt.tight_layout()
         # Save figure
-        fig_train_save_dir = os.path.join(self.model_dir, "loss_curve."+fig_format)
+        fig_train_save_dir = os.path.join(self.model_dir, "train_results."+fig_format)
         fig_train.savefig(fig_train_save_dir, dpi=None, facecolor='w', edgecolor='w',
                     orientation='portrait', format=fig_format,
                     transparent=True, bbox_inches='tight', metadata=None, pad_inches=0.01)
         plt.close(fig_train)
-        fig_valid_save_dir = os.path.join(self.model_dir, "loss_curve."+fig_format)
+        fig_valid_save_dir = os.path.join(self.model_dir, "valid_results."+fig_format)
         fig_valid.savefig(fig_valid_save_dir, dpi=None, facecolor='w', edgecolor='w',
                     orientation='portrait', format=fig_format,
                     transparent=True, bbox_inches='tight', metadata=None, pad_inches=0.01)
