@@ -78,7 +78,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     if 'w' in y_features_:
         y_features.extend(w)
     n_integration = data_params.get("n_integration", 2)
-    return 
+
     # Load Dataset
     flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
     train_ds_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, train_trajectory_name)
@@ -118,6 +118,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     epochs = model_params.get("epochs", 1000)
     lrate = model_params.get("lrate", 1e-3)
     print("Creating Neural ODE Network")
+    return
     # Create Neural-ODE Model
     model_name = "%s_%s_%s"%("gz" if env.lower() == "gazebo" else "rt", 
                               x_features_,
