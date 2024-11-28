@@ -4,7 +4,7 @@
 #-SBATCH --partition=gpu
 #SBATCH --partition=normal
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=90G
 #SBATCH --output=results/node_%j_stdout.txt
 #SBATCH --error=results/node_%j_stderr.txt
