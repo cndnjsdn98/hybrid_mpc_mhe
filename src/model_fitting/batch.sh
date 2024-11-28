@@ -18,6 +18,7 @@
 # Do not change this line unless you have your own python/tensorflow/keras set up
 
 # module load Python
+module load Python/3.10.8-GCCcore-12.2.0
 source $HOME/node/bin/activate
 
 export PYTHONPATH=/home/cs504306/NODE-MPC-MHE/:$PYTHONPATH
