@@ -23,4 +23,4 @@ source /home/cs504306/node/bin/activate
 
 export PYTHONPATH=/home/cs504306/NODE-MPC-MHE/:$PYTHONPATH
 
-python ./test.py
+python ./train_nn.py
