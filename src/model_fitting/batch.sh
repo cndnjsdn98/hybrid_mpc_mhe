@@ -8,7 +8,7 @@
 #SBATCH --mem=45G
 #SBATCH --output=results/node_%j_stdout.txt
 #SBATCH --error=results/node_%j_stderr.txt
-#SBATCH --time=00:20:00
+#SBATCH --time=20:10:00
 #SBATCH --job-name=NODE
 #SBATCH --mail-user=w.choo@ou.edu
 #SBATCH --mail-type=ALL
