@@ -1,0 +1,8 @@
+--quad_name=hummingbird
+--train_trajectory_name=circle
+--valid_trajectory_name=lemniscate
+--env=gazebo
+--gt
+--x_features=vwu
+--y_features=vw
+--n_integration=2

@@ -205,7 +205,7 @@ def main():
                                 q_mpc=q_mpc, qt_factor=qt_factor, r_mpc=r_mpc, 
                                 model_name=quad_name,
                                 mpc_with_gp=with_gp, y_features=y_features)
-    return
+    return quad_opt
 
 def init_compile():
     quad_name = "clark"

@@ -304,7 +304,7 @@ def main():
                                     change_mass=change_mass)
         rospy.loginfo("MHE Acados model Compiled Successfully...")
         
-    return
+    return quad_opt
 
 def init_compile():
     quad_name = "clark"

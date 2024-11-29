@@ -1,0 +1,16 @@
+--n_hidden
+16
+32
+63
+32
+16
+8
+--activation_hidden=tanh
+--activation_out=linear
+--dropout=0
+--epochs=1000
+--lrate=1e-1
+--viz
+--valid_freq=5
+--save_training_history
+-vv

@@ -83,8 +83,7 @@ class NeuralODE(nn.Module):
             adjoint=False,
             valid_freq=20,
             save_training_history=True,
-            viz_loss_curve=True,
-            viz_results=True):
+            viz=True):
         if adjoint:
             from torchdiffeq import odeint_adjoint as odeint
         else:
@@ -108,19 +107,18 @@ class NeuralODE(nn.Module):
             loss = loss_fcn(pred_out, train_out)
             loss.backward()
             optimizer.step()
-            if i % valid_freq == 0:
+            if verbose >= 1 and i % valid_freq == 0:
                 with torch.no_grad():
-                    pred_valid = odeint(valid_wrapper, valid_init, valid_times).to(device)
+                    pred_valid = odeint(valid_wrapper, valid_init, valid_times)
                     loss_valid = loss_fcn(pred_valid, valid_out)
                     j = int(i/valid_freq)
                     self.loss_hist[:, j] = np.array([i, loss.item(), loss_valid.item()])
                     print('Iter {:04d} | Train Loss {:.6f} | Valid Loss {:.6f}'.format(i, loss.item(), loss_valid.item()))
 
-        if viz_results:
+        if viz:
             pred_out = odeint(train_wrapper, train_init, train_times).to(device).detach().numpy()
             pred_valid = odeint(valid_wrapper, valid_init, valid_times).to(device).detach().numpy()
             self.viz_results(train_out[1], pred_out[1], valid_out[1], pred_valid[1])
-        if viz_loss_curve:
             self.visualize_loss_curve()
         return
     
