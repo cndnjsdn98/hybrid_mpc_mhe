@@ -193,7 +193,12 @@ if __name__ == '__main__':
     parser.add_argument('--save_training_history', action='store_true')
     parser.add_argument('--adjoint', action='store_true')
     parser.add_argument('--verbose', '-v', action='count', default=0)
+    # Training Params
+    # parser.add_argument('--n_threads', type=int)
     args = parser.parse_args()
+    
+    # torch.set_num_threads(args.n_threads)
+    # torch.set_num_interop_threads(args.n_threads)
 
     data_params = {
         'quad_name': args.quad_name,
