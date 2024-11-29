@@ -194,11 +194,12 @@ if __name__ == '__main__':
     parser.add_argument('--adjoint', action='store_true')
     parser.add_argument('--verbose', '-v', action='count', default=0)
     # Training Params
-    parser.add_argument('--n_threads', type=int)
+    parser.add_argument('--n_threads', type=int, default=None)
     args = parser.parse_args()
     
-    # torch.set_num_threads(args.n_threads)
-    # torch.set_num_interop_threads(args.n_threads)
+    if args.n_threads is not None:
+        torch.set_num_threads(args.n_threads-1)
+        torch.set_num_interop_threads(args.n_threads-1)
 
     data_params = {
         'quad_name': args.quad_name,

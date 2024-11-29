@@ -113,9 +113,7 @@ class NeuralODE(nn.Module):
                     loss_valid = loss_fcn(pred_valid, valid_out)
                     j = int(i/valid_freq)
                     self.loss_hist[:, j] = np.array([i, loss.item(), loss_valid.item()])
-                    print('Iter {:04d} | Train Loss {:.6f} | Valid Loss {:.6f}'.format(i, loss.item(), loss_valid.item()))
-                    print(f"PyTorch is using {torch.get_num_threads()} threads for intra-op parallelism.")
-                    print(f"PyTorch is using {torch.get_num_interop_threads()} threads for inter-op parallelism.")
+                    print('Iter {:04d} | Train Loss {:.6f} | Valid Loss {:.6f}'.format(i, loss.item(), loss_valid.item()), flush=True)
 
         if viz:
             pred_out = odeint(train_wrapper, train_init, train_times).to(device).detach().numpy()
