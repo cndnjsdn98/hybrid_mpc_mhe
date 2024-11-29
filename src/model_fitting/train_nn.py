@@ -194,7 +194,7 @@ if __name__ == '__main__':
     parser.add_argument('--adjoint', action='store_true')
     parser.add_argument('--verbose', '-v', action='count', default=0)
     # Training Params
-    # parser.add_argument('--n_threads', type=int)
+    parser.add_argument('--n_threads', type=int)
     args = parser.parse_args()
     
     # torch.set_num_threads(args.n_threads)
