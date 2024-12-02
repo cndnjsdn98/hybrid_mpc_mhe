@@ -1,5 +1,5 @@
-# NODE-MPC
-Neural ODE driven MPC
+# Hybrid-MPC-MHE
+Hybrid Model driven MPC & MHE
 
 export PYTHONPATH=$PWD/:$PYTHONPATH
 
