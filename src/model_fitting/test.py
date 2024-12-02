@@ -5,7 +5,7 @@ from torch.optim import Adam
 import torch.nn as nn
 
 from src.model_fitting.NeuralODE import NeuralODE
-from src.model_fitting.load_data import FlightDataset
+from src.model_fitting.FlightDataset import FlightDataset
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 
 print("here")

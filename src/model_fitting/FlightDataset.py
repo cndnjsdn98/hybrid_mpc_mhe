@@ -3,18 +3,41 @@ import pickle
 import os
 import json
 import matplotlib.pyplot as plt
+import torch
+from torch.utils.data import Dataset
 
 from src.utils.utils import world_to_body_velocity_mapping
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 
-class FlightDataset:
-    def __init__(self, data_dir, n_integration=2):
+class FlightDataset(Dataset):
+    def __init__(self, data_dir, n_integration=2, x_features='vwu', y_features='vw'):
         """
         Load quad flight result and compile dataset to train NN
         """
+        super(FlightDataset, self).__init__()
+        # Load Data
         self.load_data(data_dir)
         self.configure_ds(n_integration)
-        
+        # Select input and output features
+        v = [7, 8, 9]
+        w = [10, 11, 12]
+        x_idx = []
+        if 'v' in x_features:
+            x_idx.extend(v)
+        if 'w' in x_features:
+            x_idx.extend(w)
+        if 'u' in x_features:
+            self.use_cmd = True
+        y_idx = []
+        if 'v' in y_features:
+            y_idx.extend(v)
+        if 'w' in y_features:
+            y_idx.extend(w)
+        self.input = self.train_in[:, np.newaxis, x_idx]
+        self.output = self.train_out[:, :, np.newaxis, y_idx]
+        self.cmd = self.cmd_thrust
+        self.times = self.out_times
+
     def load_data(self, data_dir):
         """
             Load pickled Quadrotor Flight results
@@ -84,6 +107,15 @@ class FlightDataset:
         self.train_out = train_out_reform
         self.out_times = out_times
         self.cmd_thrust = cmd_reform
+
+    def __len__(self):
+        return len(self.train_in)
+    
+    def __getitem__(self, idx):
+        if self.use_cmd:
+            return torch.as_tensor(self.input[idx]), torch.as_tensor(self.cmd[idx]), torch.as_tensor(self.output[idx]), torch.as_tensor(self.times[idx])
+        else:
+            return torch.as_tensor(self.input[idx]), torch.as_tensor(self.output[idx]), torch.as_tensor(self.times[idx])
 
     def get_ds(self, x_idx=None, y_idx=None):
         """

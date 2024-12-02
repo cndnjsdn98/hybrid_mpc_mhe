@@ -7,7 +7,7 @@ from torch.optim import Adam
 import torch.nn as nn
 
 from src.model_fitting.NeuralODE import NeuralODE
-from src.model_fitting.load_data import FlightDataset
+from src.model_fitting.FlightDataset import FlightDataset
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 
 def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
@@ -111,6 +111,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         valid_cmd = torch.Tensor(valid_cmd).to(device)
     if verbose >= 1:
         print("Training and Validation Set initialized...")
+    
     # Model Parameters
     n_inputs = len(x_features)
     if 'u' in x_features_:
@@ -187,6 +188,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_normalization', action='store_true')
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--lrate', type=float, default=1e-3)
+    parser.add_argument('--batch_size', type=int, default=None)
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--gpu', type=int, default=None)
     parser.add_argument('--valid_freq', type=int, default=20)
