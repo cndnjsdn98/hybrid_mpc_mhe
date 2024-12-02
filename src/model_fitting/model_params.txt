@@ -8,8 +8,8 @@
 --activation_hidden=tanh
 --activation_out=linear
 --dropout=0
---epochs=5000
---lrate=1e-3
+--epochs=20000
+--lrate=1e-2
 --viz
 --valid_freq=20
 --save_training_history
