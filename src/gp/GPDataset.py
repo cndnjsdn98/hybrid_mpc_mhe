@@ -1,12 +1,8 @@
 import numpy as np
 import pickle
 import os
-import tqdm
 import json
-import matplotlib.pyplot as plt
-from src.quad_opt.quad_optimizer import QuadOptimizer
-from src.quad_opt.quad import custom_quad_param_loader
-from src.utils.utils import world_to_body_velocity_mapping, separate_variables, v_dot_q, quaternion_inverse, vw_to_vb
+from src.utils.utils import world_to_body_velocity_mapping
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 
 class GPDataset:
@@ -14,32 +10,6 @@ class GPDataset:
         """
             Load quad flight result and compile dataset to train GP
         """
-        #
-        # GP dataset from UZH for MPC
-        # gp_data_dir = os.path.join(DirConf.GP_MODELS_DIR, "af53a8b", "gazebo_sim_gp_dense_noisy")
-        # with open(os.path.join(gp_data_dir, "data_7.pkl"), "rb") as fp:
-        #     data = pickle.load(fp)
-        # self.train_in = np.zeros((len(data["train_in"]), 13))
-        # self.train_out = np.zeros((len(data["train_in"]), 13))
-        # self.train_in[:, 7] = np.squeeze(data['train_in'])
-        # self.train_out[:, 7] = np.squeeze(data['train_out'])
-        # with open(os.path.join(gp_data_dir, "data_8.pkl"), "rb") as fp:
-        #     data = pickle.load(fp)
-        # self.train_in[:, 8] = np.squeeze(data['train_in'])
-        # self.train_out[:, 8] = np.squeeze(data['train_out'])
-        # with open(os.path.join(gp_data_dir, "data_9.pkl"), "rb") as fp:
-        #     data = pickle.load(fp)
-        # self.train_in[:, 9] = np.squeeze(data['train_in'])
-        # self.train_out[:, 9] = np.squeeze(data['train_out'])
-        
-        # # GP Dataset for MHE
-        # mhe_data_dir = os.path.join(DirConf.GP_MODELS_DIR, "678_789_50_150_mhe_lemniscate_noise_3")
-        # with open(os.path.join(mhe_data_dir, "train_dataset.pkl"), "rb") as fp:
-        #     data = pickle.load(fp)
-        # self.train_in = data["train_in"]
-        # self.train_out = data["train_out"]
-        # print(self.train_in.shape)
-        # Mine
         self.load_data(data_dir)
         
     def load_data(self, data_dir):

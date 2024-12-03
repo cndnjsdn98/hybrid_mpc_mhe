@@ -3,10 +3,10 @@ import threading
 import numpy as np
 
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
-from src.utils.utils import v_dot_q, quaternion_state_mse, features_to_idx
+from src.utils.utils import v_dot_q, quaternion_state_mse, features_to_idx, world_to_body_velocity_mapping
 from src.quad_opt.quad import custom_quad_param_loader
 from src.quad_opt.quad_optimizer_mpc import QuadOptimizerMPC
-from src.model_fitting.NeuralODE import load_model
+from src.model_fitting.NeuralODE import load_neural_ode
 
 from hybrid_mpc_mhe.msg import ReferenceTrajectory
 from mav_msgs.msg import Actuators
@@ -16,6 +16,11 @@ from quadrotor_msgs.msg import ControlCommand
 from mavros_msgs.msg import AttitudeTarget
 from mavros_msgs.srv import CommandBool, SetMode
 
+def load_model(model_name, model_type):
+    if model_type == "node":
+        model = load_neural_ode(model_name)
+    if model_type == "GP":
+        model = l
 def odometry_parse(odom_msg):
     p = [odom_msg.pose.pose.position.x, odom_msg.pose.pose.position.y, odom_msg.pose.pose.position.z]
     q = [odom_msg.pose.pose.orientation.w, odom_msg.pose.pose.orientation.x, odom_msg.pose.pose.orientation.y,
@@ -168,13 +173,15 @@ class MPCNode:
             self.output_features = rospy.get_param(ns + "output_features", default=None)
             self.nn_output_idx = features_to_idx(self.output_features)
             self.correction_mode = rospy.get_param(ns + "correction_mode", default="online")
-            self.nn_model = load_model(self.model_name)
+            self.nn_model = load_neural_ode(self.model_name)
         else:
             self.model_name = None
             self.model_type = None
             self.input_features = None
             self.output_features = None
             self.nn_model = None
+            self.nn_corr_i = None
+            
         self.nn_params = {
                 'model_name': self.model_name,
                 'model_type': self.model_type,
@@ -234,6 +241,15 @@ class MPCNode:
             self.u_ref = np.array(msg.inputs).reshape(self.ref_len, -1)
 
             # If using GP, compute GP corrections
+            if self.use_nn and self.correction_mode == "offline":
+                if "v" in self.input_features:
+                    x_ref = world_to_body_velocity_mapping(self.x_ref)
+                else:
+                    x_ref = x_ref
+                input = x_ref[:, self.nn_input_idx]
+                if "u" in self.input_features:
+                    input = np.append(input, self.u_ref, axis=1)
+                self.nn_corr = self.nn_model.predict(input)
 
             if self.t_ref:
                 rospy.loginfo("New trajectory received. Time duration: %.2f s" % self.t_ref[-1])
@@ -344,6 +360,9 @@ class MPCNode:
             u_ref = ref_u[downsample_ref_ind, :]
 
             # TODO: If with offline GP retrieve GP corrections and set params
+            if self.use_nn and self.correction_mode == "offline":
+                ref_corr = self.nn_corr[self.mpc_idx:self.mpc_idx + self.n_mpc * self.control_freq_factor, :]
+                self.nn_corr_i = ref_corr[downsample_ref_ind, :]
 
             self.mpc_idx += 1
             return self.quad_opt.set_reference(x_ref, u_ref)
@@ -438,7 +457,7 @@ class MPCNode:
 
         # optimize MPC
         try:
-            if (self.quad_opt.solve_mpc(self.x)):
+            if (self.quad_opt.solve_mpc(self.x, nn_corr=self.nn_corr_i) == 0):
                 x_opt, u_opt = self.quad_opt.get_controls()
                 self.opt_dt += self.quad_opt.get_opt_dt()
             else:
@@ -458,7 +477,7 @@ class MPCNode:
             control_cmd_msg.bodyrates.x = x_opt[1, -3]
             control_cmd_msg.bodyrates.y = x_opt[1, -2]
             control_cmd_msg.bodyrates.z = x_opt[1, -1]
-            collective_thrust = np.sum(u_opt[:4]) * self.quad.max_thrust / self.quad.mass
+            collective_thrust = np.sum(u_opt[0]) * self.quad.max_thrust / self.quad.mass
             if self.ground_level:
                 collective_thrust *= 0.01
             control_cmd_msg.collective_thrust = collective_thrust
@@ -477,7 +496,7 @@ class MPCNode:
                 control_cmd_msg.body_rate.y = x_opt[1, -2]
                 control_cmd_msg.body_rate.z = x_opt[1, -1]
                 control_cmd_msg.type_mask = 128
-            thrust = np.sum(u_opt[:4])/4
+            thrust = np.sum(u_opt[0])/4
             if self.ground_level:
                 thrust *= 0.5
             control_cmd_msg.thrust =  thrust
@@ -485,9 +504,8 @@ class MPCNode:
         # Publish motor thrusts
         motor_thrust_msg = Actuators()
         motor_thrust_msg.header = Header()
-        motor_thrust_msg.angular_velocities = u_opt[:4]
+        motor_thrust_msg.angular_velocities = u_opt[0]
         self.motor_thrust_pub.publish(motor_thrust_msg)
-
 def main():
     rospy.init_node("mpc")
 

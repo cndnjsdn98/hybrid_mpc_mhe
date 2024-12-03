@@ -71,6 +71,11 @@ class QuadOptimizerMPC:
         # Init Casadi variables
         self.init_cs_vectors()
 
+        # Initi variables
+        self.x_opt = np.zeros((self.N + 1, 13))
+        self.u_opt = np.zeros((self.N, 4))
+        self.opt_dt = 0
+
         # functions of the state and input vectors used for propagating states 
         # to compute model errors
         self.quad_xdot_prop = self.quad_dynamics()
@@ -81,11 +86,11 @@ class QuadOptimizerMPC:
         # Build full model for MPC. Will have 13 variables. self.dyn_x contains the symbolic variable that
         # should be used to evaluate the dynamics function. It corresponds to self.x if there are no GP's, or
         # self.x_with_gp otherwise
-        acados_models, dynamics_equations = self.acados_setup_model(
-            self.quad_xdot_nominal(x=self.x, u=self.u, p=self.mpc_param)['x_dot'], quad_name)
+        acados_model, dynamics = self.acados_setup_model(
+            self.quad_xdot_nominal(x=self.x, u=self.u, p=self.mpc_param)['x_dot'])
         
         # Convert dynamics variables to functions of the state and input vectors
-        self.quad_xdot = cs.Function('x_dot', [self.x, self.u, self.mpc_param], [dynamics_equations], ['x', 'u', 'p'], ['x_dot'])
+        self.quad_xdot = cs.Function('x_dot', [self.x, self.u, self.mpc_param], [dynamics], ['x', 'u', 'p'], ['x_dot'])
 
         # Weighted squared error loss function q = (p_xyz, a_xyz, v_xyz, r_xyz), r = (u1, u2, u3, u4)
         if q_mpc is None:
@@ -103,11 +108,10 @@ class QuadOptimizerMPC:
         q_mpc = np.concatenate((q_mpc[:3], np.mean(q_mpc[3:6])[np.newaxis], q_mpc[3:]))   
 
         # ### Setup and compile Acados OCP solvers ### #
-        for key_model in acados_models.values():
-            ocp_mpc = self.create_mpc_solver(key_model, q_mpc, qt_factor, r_mpc, solver_options)
+        ocp_mpc = self.create_mpc_solver(acados_model, q_mpc, qt_factor, r_mpc, solver_options)
 
-            json_file_mpc = os.path.join(self.acados_models_dir, "mpc", key_model.name + '.json')
-            self.acados_mpc_solver = AcadosOcpSolver(ocp_mpc, json_file=json_file_mpc)
+        json_file_mpc = os.path.join(self.acados_models_dir, "mpc", acados_model.name + '.json')
+        self.acados_mpc_solver = AcadosOcpSolver(ocp_mpc, json_file=json_file_mpc)
 
     def init_cs_vectors(self):
         # Declare model variables
@@ -136,94 +140,87 @@ class QuadOptimizerMPC:
         # Model Corrections using NN
         self.mpc_param = np.array([])
         if self.use_nn:
-            self.d = cs.MX.sym('d', len(self.nn_output_idx))
-            self.mpc_param = cs.vertcat(self.d)
-            if self.correction_mode == "online":
-                # Model variables for Online prediction
+            if self.correction_mode == "offline":
+                self.nn_corr = cs.MX.sym('d', len(self.nn_output_idx))
+                # Transform Velocity corrections to world frame
+                if "v" in self.output_features:
+                    v_states = [7, 8, 9]
+                    v_idx = [i for i, x in enumerate(self.nn_output_idx) if x in v_states]
+                    vb_corr = self.nn_corr[v_idx]
+                    vw_corr = v_dot_q(vb_corr, self.x[3:7])
+                    self.nn_corr[v_idx] = vw_corr
+                self.mpc_param = cs.vertcat(self.nn_corr)
+            elif self.correction_mode == "online":
+                # Model variables for Online predictions
                 # Used as initial state for NN prediction
+                nn_input = cs.vertcat()
+                input = cs.vertcat()
                 if "q" in self.input_features:
                     self.nn_q = cs.MX.sym('nn_q', 4)
+                    nn_input = cs.vertcat(nn_input, self.nn_q)
+                    input = cs.vertcat(input, self.q)
                 if "v" in self.input_features:
                     self.nn_v = cs.MX.sym('nn_v', 3)
+                    nn_input = cs.vertcat(nn_input, self.nn_v)
+                    input = cs.vertcat(input, self.v)
                 if "w" in self.input_features:
                     self.nn_r = cs.MX.sym('nn_r', 3)
-                self.nn_x = cs.vertcat(self.nn_p, self.nn_q, self.nn_v, self.nn_r)
-                
-                nn_u1 = cs.MX.sym('nn_u1')
-                nn_u2 = cs.MX.sym('nn_u2')
-                nn_u3 = cs.MX.sym('nn_u3')
-                nn_u4 = cs.MX.sym('nn_u4')
-                self.nn_u = cs.vertcat(nn_u1, nn_u2, nn_u3, nn_u4)
-
+                    nn_input = cs.vertcat(nn_input, self.nn_r)
+                    input = cs.vertcat(input, self.r)
+                if "u" in self.input_features:
+                    nn_u1 = cs.MX.sym('nn_u1')
+                    nn_u2 = cs.MX.sym('nn_u2')
+                    nn_u3 = cs.MX.sym('nn_u3')
+                    nn_u4 = cs.MX.sym('nn_u4')
+                    self.nn_u = cs.vertcat(nn_u1, nn_u2, nn_u3, nn_u4)
+                    nn_input = cs.vertcat(nn_input, self.nn_u)
+                    input = cs.vertcat(input, self.u)
                 self.trigger_var = cs.MX.sym('trigger', 1)
+                self.input = nn_input * self.trigger_var + input * (1 - self.trigger_var)
+                self.nn_corr = self.nn_model(self.input)
+                # Transform Velocity corrections to world frame
+                if "v" in self.output_features:
+                    v_states = [7, 8, 9]
+                    v_idx = [i for i, x in enumerate(self.nn_output_idx) if x in v_states]
+                    vb_corr = self.nn_corr[v_idx]
+                    vw_corr = v_dot_q(vb_corr, self.x[3:7])
+                    self.nn_corr[v_idx] = vw_corr
+                self.mpc_param = cs.vertcat(nn_input, self.trigger_var)
 
             self.B_x = np.zeros((13, len(self.nn_output_idx)))
             for i, idx in enumerate(self.nn_output_idx):
                 self.B_x[idx, i] = 1
     
-    def acados_setup_model(self, nominal, quad_name, mhe=False):
+    def acados_setup_model(self, nominal):
         """
         Builds an Acados symbolic models using CasADi expressions.
         :param quad_name: Name of the quadrotor
         :param nominal: CasADi symbolic nominal model of the quadrotor: f(self.x, self.u) = x_dot, dimensions 13x1.
         :param mhe: Boolean variable. True if model is for MHE, and False if model is for MPC. 
-        :return: Returns a total of three outputs, where m is the number of GP's in the GP ensemble, or 1 if no GP:
-            - A dictionary of m AcadosModel of the GP-augmented quadrotor
-            - A dictionary of m CasADi symbolic nominal dynamics equations with GP mean value augmentations (if with GP)
-        :rtype: dict, dict, cs.MX
+
         """
-
-        def fill_in_acados_model(x, x_dot, u, p, dynamics):
-
-            f_impl = x_dot - dynamics
-
-            # Dynamics model
-            model = AcadosModel()
-            model.f_expl_expr = dynamics
-            model.f_impl_expr = f_impl
-            model.x = x
-            model.xdot = x_dot
-            model.u = u
-            model.p = p
-            model.name = "mpc"
-
-            return model
-
-        acados_models = {}
-        dynamics_equations = {}
-
-        # Run GP inference if GP's available               
-        if self.use_nn and self.correction_mode == "offline":
-            # Transform correction back to world reference frame
-            gp_means = v_dot_q(self.d, self.x[3:7])
-
-            # Add GP mean prediction parameters and additive state noise if model is for MHE
-            dynamics_equations[0] = nominal + cs.mtimes(self.B_x, gp_means)
-
-            x_dot_ = self.x_dot
-            x_ = self.x
-            dynamics_ = dynamics_equations[0]
-            i_name = quad_name + self.model_type + "_offline"
-
-            # params = cs.vertcat(self.mpc_param, self.gp_x, self.d, self.trigger_var)
-            params = cs.vertcat(self.mpc_param, self.d)
-            acados_models[0] = fill_in_acados_model(x=x_, x_dot=x_dot_, u=self.u, p=params, dynamics=dynamics_, name=i_name, mhe=mhe)
+        # Run inference if NN's available               
+        if self.use_nn:
+            # Add model correction to nominal model
+            dynamics_ = nominal + cs.mtimes(self.B_x, self.nn_corr)
         else:
-            # No available GP so return nominal dynamics and add additive state noise if model is for MHE
-            dynamics_equations[0] = nominal
-            x_dot_ = self.x_dot
-            x_ = self.x
-            u_ = self.u
-            if mhe:
-                param = []
-            else:
-                param = self.mpc_param
-
             dynamics_ = nominal
 
-            acados_models[0] = fill_in_acados_model(x=x_, x_dot=x_dot_, u=u_, p=param, dynamics=dynamics_, name=quad_name, mhe=mhe)
+        x_dot_ = self.x_dot
+        x_ = self.x
+        u_ = self.u
+        param_ = self.mpc_param
 
-        return acados_models, dynamics_equations
+        acados_model = AcadosModel()
+        acados_model.f_expl_expr = dynamics_
+        acados_model.f_impl_expr = x_dot_ - dynamics_
+        acados_model.x = x_
+        acados_model.xdot = x_dot_
+        acados_model.u = u_
+        acados_model.p = param_
+        acados_model.name = "mpc"
+    
+        return acados_model, dynamics_
 
     def create_mpc_solver(self, model, q_cost, qt_factor, r_cost, solver_options):
         """
@@ -377,3 +374,87 @@ class QuadOptimizerMPC:
 
         return xf
 
+    def set_reference(self, x_ref, u_ref):
+        """
+        Sets the reference trajectory.
+        :param x_target: Nx13-dimensional reference trajectory (p_xyz, angle_wxyz, v_xyz, rate_xyz). It is passed in the
+        form of a 4-length list, where the first element is a Nx3 numpy array referring to the position targets, the
+        second is a Nx4 array referring to the quaternion, two more Nx3 arrays for the velocity and body rate targets.
+        :param u_target: Nx4-dimensional target control input vector (u1, u2, u3, u4)
+        """
+        # Set the reference for the given reference length 
+        ref_len = x_ref.shape[0]
+        for j in range(ref_len-1):
+            ref = np.concatenate((x_ref[j, :], u_ref[j, :]))
+            self.acados_mpc_solver.set(j, "yref", ref)
+        # Set ref for remainder of prediction horizon with final element of the reference trajectory
+        ref = np.concatenate((x_ref[-1, :], u_ref[-1, :]))
+        for j in range(ref_len-1, self.N):
+            self.acados_mpc_solver.set(j, "yref", ref)
+        # the last MPC node has only a state reference but no input reference
+        self.acados_mpc_solver.set(self.N, "yref", x_ref[-1, :]) 
+
+    def set_params(self, param):
+        for j in range(self.N):
+            self.acados_mpc_solver.set()
+    
+    def solve_mpc(self, x0=None, u0=None, nn_corr=None):
+        """
+        Optimizes a trajectory to reach the pre-set target state, starting from the input initial state, that minimizes
+        the quadratic cost function and respects the constraints of the system
+
+        :param x0: 13-element list of the initial state. If None, 0 state will be used
+        :param u0: 4-element list of the current motor thrusts. If None, previous u_opt will be used
+        :param nn_corr: Offline Model Correction terms to be used in the prediction horizon. 
+        :return: optimizer status
+        """
+
+        if x0 is None:
+            x0 = [0, 0, 0] + [1, 0, 0, 0] + [0, 0, 0] + [0, 0, 0]
+        # Set initial state. Add gp state if needed
+        x0 = np.stack(x0)
+        if u0 is None:
+            u0 = self.u_opt[0]
+        u0 = np.stack(u0)
+        self.acados_mpc_solver.set(0, 'lbx', x0)
+        self.acados_mpc_solver.set(0, 'ubx', x0)
+
+        # Set parameters for NN
+        if self.use_nn:
+            if self.correction_mode == "offline":
+                input = x0[self.nn_input_idx]
+                nn_corr_0 = self.nn_model.predict(input)
+                self.acados_mpc_solver.set(0, 'p', nn_corr_0)
+                if nn_corr is not None:
+                    for j in range(1, self.N):
+                        self.acados_mpc_solver.set(j, 'p', nn_corr[j])
+            elif self.correction_mode == "online":
+                input = x0[self.nn_input_idx]
+                if 'u' in self.input_features:
+                    param = np.array((input, u0, 1))
+                else:
+                    param = np.array((input, 1))
+                self.acados_mpc_solver.set(0, 'p', param)
+                param = np.zeros_like(param)
+                for j in range(1, self.N):
+                    self.acados_mpc_solver.set(j, 'p', param)
+
+        # Solve MPC
+        status = self.acados_mpc_solver.solve()
+        
+        # Get u and projected states
+        for i in range(self.N):
+            self.u_opt[i, :] = self.acados_mpc_solver.get(i, "u")
+            self.x_opt[i, :] = self.acados_mpc_solver.get(i, "x")
+        self.x_opt[self.N, :] = self.acados_mpc_solver.get(self.N, "x")
+
+        # Get computation time
+        self.opt_dt = self.acados_mpc_solver.get_stats('time_tot') 
+
+        return status
+    
+    def get_controls(self):
+        return self.x_opt, self.u_opt
+    
+    def get_opt_dt(self):
+        return self.opt_dt

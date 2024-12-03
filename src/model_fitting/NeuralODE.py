@@ -12,7 +12,7 @@ class NeuralODE(nn.Module):
     def __init__(self, model_name, n_inputs, n_hidden, n_output, activation_hidden, activation_out, dropout=None, batch_normalization=False):
         super(NeuralODE, self).__init__()
         self.model_name = model_name
-        self.model_dir = os.path.join(DirConf.MODELS_DIR, self.model_name)
+        self.model_dir = os.path.join(DirConf.MODELS_DIR, 'node', self.model_name)
         safe_mkdir_recursive(self.model_dir, overwrite=False)
 
         self.model_params = {
@@ -253,12 +253,35 @@ class NeuralODE(nn.Module):
         torch.save(self.state_dict(), os.path.join(self.model_dir, "model.pth"))
         with open(os.path.join(self.model_dir, "model_params.pkl"), "wb") as fp:
             pickle.dump(self.model_params, fp)
+        
+    def predict(self, input, dt=0.02, int_method=None, adjoint=False, device='cpu'):
+        '''
+        Compute prediction
+        ''' 
+        if adjoint:
+            from torchdiffeq import odeint_adjoint as odeint
+        else:
+            from torchdiffeq import odeint  
+        if len(input) == 3:
+            init_state, cmd, time = input
+            wrapper = lambda t, x: self(t, torch.cat((x, cmd), dim=-1))
+        elif len(input) == 2:
+            init_state, cmd = input
+            wrapper = lambda t, x: self(t, torch.cat((x, cmd), dim=-1))
+            time = torch.as_tensor(np.array([0, dt]))
+        elif len(input) == 1:
+            init_state = input
+            wrapper = lambda t, x: self(t, x)
+            time = torch.as_tensor(np.array([0, dt]))
 
-def load_model(model_name):
+        pred = odeint(wrapper, init_state, time).to(device).detach().numpy()
+        return pred[1]
+
+def load_neural_ode(model_name):
     '''
     Load Model
     '''
-    model_path = os.path.join(DirConf.MODELS_DIR, model_name)
+    model_path = os.path.join(DirConf.MODELS_DIR, 'node', model_name)
     with open(os.path.join(model_path, "model_params.pkl"), "rb") as fp:
         model_params =  pickle.load(fp)
     

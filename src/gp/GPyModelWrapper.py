@@ -11,19 +11,16 @@ from src.gp.gpy_model import *
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 import matplotlib.pyplot as plt
 
-from src.gp.gp_cassadi import load_pickled_models, restore_gp_regressors
 class GPyModelWrapper:
     """
     Class for storing GPy Models, likelihood and its necessary parameters. 
     """
-    def __init__(self, model_type, model_name=None, load=False,
+    def __init__(self, model_name=None, load=False,
                  keep_train_data=False, 
                  x_features=[7,8,9], u_features=[], y_features=[7,8,9], 
                  mhe=False,
                  model_dir=None):
         """
-        :param model_type: String describing the Type of the GPy Model
-        :type model_type: string
         :param model_name: String value of the model name
         :type model_name: string 
         :param load: Boolean value to determine whether to load the existing model if model_name exists
@@ -38,7 +35,6 @@ class GPyModelWrapper:
         :type y_features: list  
         """
         self.machine = 0 # 0 indicttes cpu and 1 indicates gpu
-        self.model_type = model_type
         self.model_name = model_name
         self.mhe = mhe
         self.keep_train_data = keep_train_data
@@ -46,7 +42,7 @@ class GPyModelWrapper:
         if model_dir is not None:
             self.gp_model_dir = os.path.join(model_dir, model_name)
         else:
-            self.gp_model_dir = os.path.join(DirConfig.GP_MODELS_DIR, model_name)
+            self.gp_model_dir = os.path.join(DirConfig.MODELS_DIR, 'gp', model_name)
 
         # Check if a model exists in model_name
         if load and model_name is not None and os.path.exists(os.path.join(self.gp_model_dir, "gpy_config.json")):
@@ -68,7 +64,6 @@ class GPyModelWrapper:
 
     def train(self, train_x, train_y, train_iter, 
               induce_num=None, induce_points=None,
-              dense_model_name=None,
               verbose=0, script_model=False):
         """
         Trains the GPy Model with the given input training dataset.
@@ -97,18 +92,13 @@ class GPyModelWrapper:
             self.train_x = train_x
             self.train_y = train_y
 
-        if self.model_type == "Exact":
-            self.train_and_save_Exact_model(train_x, train_y, train_iter,
-                                            dense_model_name=dense_model_name, 
+        self.train_and_save_Approx_model(train_x, train_y, train_iter,
+                                            induce_num=induce_num, 
+                                            induce_points=induce_points, 
                                             verbose=verbose, script_model=script_model)
-        elif self.model_type == "Approx":
-            self.train_and_save_Approx_model(train_x, train_y, train_iter,
-                                             induce_num=induce_num, 
-                                             induce_points=induce_points, 
-                                             verbose=verbose, script_model=script_model)
         self.machine = 1
 
-    def predict(self, input, skip_variance=False, gpu=False):
+    def predict(self, input, skip_variance=True, gpu=False):
         """
         Returns the predicted mean and variance value of the GPy model for 
         the given input value.
@@ -116,7 +106,7 @@ class GPyModelWrapper:
         :type input: torch.Tensor
         :return Array of predicted mean and variance value for the given input value. 
         """
-        cov_pred = np.zeros(input.shape)
+        # cov_pred = np.zeros(input.shape)
         mean_pred = np.zeros(input.shape)
 
         # If the input is an array with only single prediction points
@@ -154,20 +144,20 @@ class GPyModelWrapper:
             for i, model, likelihood in zip(range(num_dim), self.model.values(), self.likelihood.values()):
                 if input.ndim > 1:
                     prediction = likelihood(model(test_x[:, i]))
-                    cov_pred[:, i] = prediction.variance.cpu().detach().numpy() # Bring back on to CPU 
+                    # cov_pred[:, i] = prediction.variance.cpu().detach().numpy() # Bring back on to CPU 
                     mean_pred[:, i] = prediction.mean.detach().cpu().numpy()
                 else:
                     prediction = likelihood(model(test_x[i]))
-                    cov_pred[i] = prediction.variance.cpu().detach().numpy()
+                    # cov_pred[i] = prediction.variance.cpu().detach().numpy()
                     mean_pred[i] = prediction.mean.detach().cpu().numpy()
                 del prediction
                 torch.cuda.empty_cache()
     
         del test_x
         if input.ndim == 1:
-            return [cov_pred], [mean_pred]
+            return [mean_pred]
         else:
-            return cov_pred, mean_pred
+            return mean_pred
 
     
     def load(self, keep_train_data = False):
@@ -201,10 +191,7 @@ class GPyModelWrapper:
         likelihood_dict = {}
         for i, idx in enumerate(gp_config["x_features"]):
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
-            if self.model_type == "Approx":
-                model = ApproximateGPModel(torch.linspace(0, 1, gp_config["induce_num"]))
-            elif self.model_type == "Exact":
-                model = ExactGPModel(train_x[:, i], train_y[:, i], likelihood)
+            model = ApproximateGPModel(torch.linspace(0, 1, gp_config["induce_num"]))
             # load state_dict
             state_dict = torch.load(os.path.join(self.gp_model_dir, "gpy_model_" + str(idx) + ".pth"))
             model.load_state_dict(state_dict)
@@ -235,44 +222,6 @@ class GPyModelWrapper:
         self.B_x = B_x
         self.B_z = B_z
         self.machine = 1
-
-    def train_exact_model(self, train_x, train_y, train_iter, verbose=0):
-        """
-        Takes in training data and training parameters and trains an approximate GPy Model.
-        Returns GPy model and its likelihood 
-        :param train_x: Array of Training Input data
-        :type train_x: torch.Tensor
-        :param train_y: Array of Training Output data
-        :param train_y: torch.Tensor
-        :param induce_num: Integer value of number of points to be induced for approximate GPy Model
-        :param train_iter: Integer value of number of training iterations
-        :return Trained GPy Model and Likelihood
-        """
-        # Set up GPy Model
-        likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        model = ExactGPModel(train_x, train_y, likelihood)
-        # train_x = train_x.cuda()
-        # train_y = train_y.cuda()
-        
-        # Set up Optimizer and objective function
-        objective_function = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-        optimizer = torch.optim.Adamax(model.parameters(), lr=0.05)
-
-        # Train
-        model.train()
-        likelihood.train()
-        for i in range(train_iter):
-            output = model(train_x)
-            loss = -objective_function(output, train_y)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            if verbose >= 2:
-                print('Iter %d/%d - Loss: %.3f' % (i + 1, train_iter, loss.item()))
-
-        model.eval()
-        likelihood.eval()
-        return model, likelihood
 
     def train_approximate_model(self, train_x, train_y, 
                                 induce_num, train_iter, 
@@ -317,69 +266,6 @@ class GPyModelWrapper:
         likelihood.eval()
         return model, likelihood
 
-    def train_and_save_Exact_model(self, train_x, train_y, train_iter,
-                                   dense_model_name=None, 
-                                   verbose=0, script_model=False):
-        """
-        Trains Exact GPy Model. 
-        :param train_x: Array of Training Input data
-        :type train_x: torch.Tensor
-        :param train_y: Array of Training Output data
-        :type train_y: torch.Tensor
-        :param train_iter: Number of iterations training the GPy Model.
-        :type train_iter: integer
-        :param dense_model_name: Name of the dense model used to predict training data
-        :type dense_model_name: string
-        :param verbose: Verbose level ie. print level of Model training.
-        :type script_model: int
-        :param script_model: Boolean value indicating whether to script the model for libtorch.
-        :type script_model: bool
-        """
-        model_dict = {}
-        likelihood_dict = {}
-        tic = time.time()
-        # Train GPy Model
-        for i, x_feature in enumerate(self.x_features):
-            if verbose >= 1:
-                print("########## BEGIN TRAINING idx {} ##########".format(x_feature))
-            model, likelihood = self.train_exact_model(train_x[:, i], train_y[:, i], train_iter, verbose=verbose)
-            model_dict[x_feature] = model
-            likelihood_dict[x_feature] = likelihood
-        self.model = model_dict
-        self.likelihood = likelihood_dict
-        if verbose >= 1:
-            print("########## FINISHED TRAINING ##########")
-            print("Elapsed time to train the GP: {:.2f}s".format(time.time() - tic))
-        # Save GP Model
-        train_length = train_x.shape[0]    
-        # Save gpy model
-        for i, x_feature in enumerate(self.x_features):
-            model = model_dict[x_feature].cpu().double()
-            torch.save(model.state_dict(), os.path.join(self.gp_model_dir, "gpy_model_" + str(x_feature) + ".pth"))  
-            if script_model:
-                example_input = train_x[:1, i].clone().detach().double()
-                with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.trace_mode():
-                    model.eval()
-                    _ = model(example_input)
-                    scripted_model = torch.jit.trace(MeanVarModelWrapper(model).double(), example_input)
-                    scripted_model.save(os.path.join(self.gp_model_dir, "scripted_gpy_model_" + str(x_feature) + ".pth"))
-        if verbose >= 1:
-            print(self.model_name)
-        # Save Meta data
-        meta_data = {"x_features": self.x_features, 
-                     "y_features": self.y_features, 
-                     "u_features": self.u_features, 
-                     "train_length": train_length, 
-                     "train_iter": train_iter, 
-                     "mhe": str(self.mhe),
-                     "dense_model_name": dense_model_name if dense_model_name is not None else ""}
-        with open(os.path.join(self.gp_model_dir, "gpy_config.json"), 'w') as f:
-            json.dump(meta_data, f)
-        # Save Training Data
-        train_dataset = {"train_x": np.array(train_x), "train_y": np.array(train_y)}
-        with open(os.path.join(self.gp_model_dir, "train_dataset.pkl"), "wb") as fp:
-            pickle.dump(train_dataset, fp)
-        
     def train_and_save_Approx_model(self, train_x, train_y, train_iter,
                                     induce_num=20, induce_points=None, verbose=0, script_model=False):
         """
@@ -447,21 +333,10 @@ class GPyModelWrapper:
         with open(os.path.join(self.gp_model_dir, "train_dataset.pkl"), "wb") as fp:
             pickle.dump(train_dataset, fp)
 
-    def visualize_model(self, x, y, dt=0.02, compare_cs_gp=True):
+    def visualize_model(self, x, y, dt=0.02):
         """
         Visualize the model
         """
-        #  Load GP Casadi
-        if compare_cs_gp:
-            gp_load_options = {
-                "gpy_torch": None,
-                "git": "af53a8b",
-                "model_name": "gazebo_sim_gp_noisy",
-                "params": {"gazebo": "default"}
-            }
-            pre_trained_models = load_pickled_models(model_options=gp_load_options)
-            gp_cs = restore_gp_regressors(pre_trained_models)
-
         x = x.cpu()
         y = y.cpu()
         # Plot data
@@ -493,17 +368,11 @@ class GPyModelWrapper:
         # Plot along t
         # Predict using GPy model
         cov, pred = self.predict(x)
-        # Predict using GP Casadi model
-        # if compare_cs_gp:
-        #     u_test = np.zeros((4, x.shape[0]))
-        #     pred_cs = gp_cs.predict(x, u_test, return_cov=False, return_z=False)
 
         t_induce = np.linspace(0, x.shape[0] * dt, x.shape[0])
         for i, y_feature in enumerate(self.y_features):
             fig, ax = plt.subplots(1,1, figsize=(40,15)) 
             ax.plot(t_induce, pred[:, i], "blue", label=r'GP $\mu$')
-            # if compare_cs_gp:
-            #     ax.plot(t_induce, pred_cs[:, i], "black", label=r'Casadi GP $\mu$')
             ax.plot(t_induce, y[:, i], c='r', label="Inducing Data")
             ax.legend(loc="best")
             ax.set_xlabel(r'Time $[s]$', fontsize=BIGGER_SIZE) 
@@ -524,22 +393,12 @@ class GPyModelWrapper:
         x_reg = np.array([np.linspace(lower[i], upper[i], reg_resolution) for i in range(len(self.x_features))]).T
         # Predict using GPy model
         cov, pred = self.predict(x_reg)
-        # Predict using GP Casadi model
-        if compare_cs_gp:
-            u_test = np.zeros((4, reg_resolution))
-            x_reg_cs = np.append(np.zeros((7, reg_resolution)), x_reg.T, axis=0)
-            x_reg_cs = np.append(x_reg_cs, np.zeros((3, reg_resolution)), axis=0)
-            pred_cs = gp_cs.predict(x_reg_cs, u_test, return_cov=False, return_z=False)
-            pred_cs = pred_cs["pred"]
-
         for i, idx_out in enumerate(self.y_features):
             fig, ax = plt.subplots(1,1, figsize=(6,4)) 
             ci = 1.96 * np.sqrt(cov[:, i])
             ax.plot(x_reg[:, i], pred[:, i] + ci, "C1--")
             ax.plot(x_reg[:, i], pred[:, i] - ci, "C1--")
             ax.plot(x_reg[:, i], pred[:, i], "C1", label=r'Offline GP $\mu$', zorder=20)
-            if compare_cs_gp:
-                ax.plot(x_reg[:, i], pred_cs[i, :], "black", label=r'Online GP $\mu$')
             ax.scatter(x[:, i], y[:, i], c='royalblue', s=17, label="Data", alpha=0.45, zorder=0)
             # if self.keep_train_data:
             #     ax.scatter(self.train_x[:, i], self.train_y[:, i], c="lightcoral", s=17, label="train data", alpha = 0.66, zorder=10)
@@ -589,9 +448,6 @@ class GPyModelWrapper:
     
     def get_y_features(self):
         return self.y_features
-
-    def get_model_type(self):
-        return self.model_type
 
     def get_u_features(self):
         return self.u_features

@@ -70,7 +70,7 @@ def custom_quad_param_loader(quad_name):
 
 class Quadrotor:
 
-    def __init__(self, noisy=False, drag=False, payload=False, motor_noise=False):
+    def __init__(self):
         """
         Initialization of the 3D quadrotor class
         :param noisy: Whether noise is used in the simulation
@@ -83,9 +83,6 @@ class Quadrotor:
         :type motor_noise: bool
         """
         self.quad_name = ""
-        
-        # Either 'x' or '+'. The xy configuration of the thrusters in the body plane.
-        configuration = 'x'
 
         # Maximum thrust in Newtons of a thruster when rotating at maximum speed.
         self.max_rot_velocity = 838
