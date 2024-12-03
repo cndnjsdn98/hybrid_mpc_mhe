@@ -8,6 +8,7 @@ import torch.nn as nn
 
 from src.model_fitting.NeuralODE import NeuralODE
 from src.model_fitting.FlightDataset import FlightDataset
+from src.utils.utils import features_to_idx
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 
 def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
@@ -45,9 +46,9 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
         - type: string
     - gt: Boolean value to indicate whether groundtruth state measurements were used for flight execution.
         - type: Bool
-    - x_features: String indicating the states used as input features
+    - input_features: String indicating the states used as input features
         - type: String
-    - y_features: String indicating the states that comprises the output features
+    - output_features: String indicating the states that comprises the output features
         - type: String
     - n_integration: Number of integrations in to the future points utilized for single training instance
         - type: Int
@@ -69,18 +70,10 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     valid_trajectory_name = data_params.get('valid_trajectory_name', 'lemniscate').lower()
     env = data_params.get('env', 'gazebo').lower()
     gt = data_params.get('gt', True)
-    x_features_ = data_params.get('x_features', 'vwu')
-    x_features = []
-    if 'v' in x_features_:
-        x_features.extend(v)
-    if 'w' in x_features_:
-        x_features.extend(w)
-    y_features_ = data_params.get('y_features', 'vw')
-    y_features = []
-    if 'v' in y_features_:
-        y_features.extend(v)
-    if 'w' in y_features_:
-        y_features.extend(w)
+    input_features = data_params.get('input_features', 'vwu')
+    nn_input_idx = features_to_idx(input_features)
+    output_features = data_params.get('output_features', 'vw')
+    nn_output_idx = features_to_idx(output_features)
     n_integration = data_params.get("n_integration", 2)
 
     # Load Dataset
@@ -94,29 +87,29 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     if verbose >= 1:
         print("Flight Dataset Loaded...")
     # Retrieve Training Data
-    train_init, train_out, train_times = train_ds.get_ds(x_features, y_features)
+    train_init, train_out, train_times = train_ds.get_ds(nn_input_idx, nn_output_idx)
     train_init = torch.Tensor(train_init[:, np.newaxis, :]).to(device)
     train_out = torch.Tensor(train_out[:, :, np.newaxis, :]).to(device)
     train_times = torch.Tensor(train_times).to(device)
-    if 'u' in x_features_:
+    if 'u' in input_features:
         train_cmd = train_ds.get_cmd()
         train_cmd = torch.Tensor(train_cmd).to(device)
     # Retrieve Validation Data
-    valid_init, valid_out, valid_times = valid_ds.get_ds(x_features, y_features)
+    valid_init, valid_out, valid_times = valid_ds.get_ds(nn_input_idx, nn_output_idx)
     valid_init = torch.Tensor(valid_init[:, np.newaxis, :]).to(device)
     valid_out = torch.Tensor(valid_out[:, :, np.newaxis, :]).to(device)
     valid_times = torch.Tensor(valid_times).to(device)
-    if 'u' in x_features_:
+    if 'u' in input_features:
         valid_cmd = valid_ds.get_cmd()
         valid_cmd = torch.Tensor(valid_cmd).to(device)
     if verbose >= 1:
         print("Training and Validation Set initialized...")
     
     # Model Parameters
-    n_inputs = len(x_features)
-    if 'u' in x_features_:
+    n_inputs = len(nn_input_idx)
+    if 'u' in input_features:
         n_inputs += train_cmd.shape[2]
-    n_output = len(y_features)
+    n_output = len(nn_output_idx)
     n_hidden = model_params.get("n_hidden", [32, 64, 64, 32])
     activation_hidden = model_params.get("activation_hidden", "tanh")
     activation_out = model_params.get("activation_out", "linear")
@@ -133,8 +126,8 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     
     # Create Neural-ODE Model
     model_name = "%s_%s_%s"%("gz" if env.lower() == "gazebo" else "rt", 
-                              x_features_,
-                              y_features_)
+                              input_features,
+                              output_features)
     neuralODE = NeuralODE(model_name,
                           n_inputs, 
                           n_hidden,
@@ -177,8 +170,8 @@ if __name__ == '__main__':
     parser.add_argument('--valid_trajectory_name', type=str, choices=['lemniscate', 'circle', 'random'], default='lemniscate')
     parser.add_argument('--env', type=str, choices=['gazebo', 'arena'], default='gazebo')
     parser.add_argument('--gt', action='store_true')
-    parser.add_argument('--x_features', type=str, default='vwu')
-    parser.add_argument('--y_features', type=str, default='vw')
+    parser.add_argument('--input_features', type=str, default='vwu')
+    parser.add_argument('--output_features', type=str, default='vw')
     parser.add_argument('--n_integration', type=int, default=2)
     # Model Params
     parser.add_argument('--n_hidden', type=int, nargs='+', default=[16, 32, 16])
@@ -209,8 +202,8 @@ if __name__ == '__main__':
         'valid_trajectory_name': args.valid_trajectory_name,
         'env': args.env,
         'gt': args.gt,
-        'x_features': args.x_features,
-        'y_features': args.y_features,
+        'input_features': args.input_features,
+        'output_features': args.output_features,
         'n_integration': args.n_integration,
     }
     model_params = {

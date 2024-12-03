@@ -116,6 +116,22 @@ def q_to_rot_mat(q):
 
     return rot_mat
 
+def quaternion_state_mse(x, x_ref, mask):
+    """
+    Calculates the MSE of the 13-dimensional state (p_xyz, q_wxyz, v_xyz, r_xyz) wrt. the reference state. The MSE of
+    the quaternions are treated axes-wise.
+
+    :param x: 13-dimensional state
+    :param x_ref: 13-dimensional reference state
+    :param mask: 12-dimensional masking for weighted MSE (p_xyz, q_xyz, v_xyz, r_xyz)
+    :return: the mean squared error of both
+    """
+
+    q_error = q_dot_q(x[3:7], quaternion_inverse(x_ref[3:7]))
+    e = np.concatenate((x[:3] - x_ref[:3], q_error[1:], x[7:10] - x_ref[7:10], x[10:] - x_ref[10:]))
+
+    return np.sqrt((e * np.array(mask)).dot(e))
+
 def skew_symmetric(v):
     """
     Computes the skew-symmetric matrix of a 3D vector (PAMPC version)
@@ -192,6 +208,21 @@ def separate_variables(traj):
     
     return [p_traj, q_traj, v_traj, r_traj]
 
+def features_to_idx(features):
+    """
+    Converts string input of input/output features to corresponding state indexes
+    """
+    q = [3, 4, 5, 6]
+    v= [7, 8, 9]
+    w = [10, 11, 12]
+    idx = []
+    if 'q' in features:
+        idx.extend(q)
+    if 'v' in features:
+        idx.extend(v)
+    if 'w' in features:
+        idx.extend(w)
+    return idx
 
 def unwrap(p):
     # for i in range(len(p)-1):

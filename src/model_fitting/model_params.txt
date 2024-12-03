@@ -8,7 +8,7 @@
 --activation_hidden=tanh
 --activation_out=linear
 --dropout=0
---epochs=20000
+--epochs=15000
 --lrate=1e-2
 --viz
 --valid_freq=20
