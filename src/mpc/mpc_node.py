@@ -6,7 +6,8 @@ from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 from src.utils.utils import v_dot_q, quaternion_state_mse, features_to_idx, world_to_body_velocity_mapping
 from src.quad_opt.quad import custom_quad_param_loader
 from src.quad_opt.quad_optimizer_mpc import QuadOptimizerMPC
-from src.model_fitting.NeuralODE import load_neural_ode
+from src.neural_ode.NeuralODE import load_neural_ode
+from src.gp.GPyModelWrapper import GPyModelWrapper
 
 from hybrid_mpc_mhe.msg import ReferenceTrajectory
 from mav_msgs.msg import Actuators
@@ -20,7 +21,9 @@ def load_model(model_name, model_type):
     if model_type == "node":
         model = load_neural_ode(model_name)
     if model_type == "GP":
-        model = l
+        model = GPyModelWrapper(model_name, load=True)
+    return model
+
 def odometry_parse(odom_msg):
     p = [odom_msg.pose.pose.position.x, odom_msg.pose.pose.position.y, odom_msg.pose.pose.position.z]
     q = [odom_msg.pose.pose.orientation.w, odom_msg.pose.pose.orientation.x, odom_msg.pose.pose.orientation.y,
@@ -173,7 +176,7 @@ class MPCNode:
             self.output_features = rospy.get_param(ns + "output_features", default=None)
             self.nn_output_idx = features_to_idx(self.output_features)
             self.correction_mode = rospy.get_param(ns + "correction_mode", default="online")
-            self.nn_model = load_neural_ode(self.model_name)
+            self.nn_model = load_model(self.model_name)
         else:
             self.model_name = None
             self.model_type = None

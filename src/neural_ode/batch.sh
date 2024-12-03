@@ -12,7 +12,7 @@
 #SBATCH --job-name=NODE
 #SBATCH --mail-user=w.choo@ou.edu
 #SBATCH --mail-type=ALL
-#SBATCH --chdir=/home/cs504306/NODE-MPC-MHE/src/model_fitting/
+#SBATCH --chdir=/home/cs504306/hybrid_mpc_mhe/src/neural_ode/
 
 #################################################
 # Do not change this line unless you have your own python/tensorflow/keras set up
@@ -21,6 +21,6 @@
 module load Python/3.10.8-GCCcore-12.2.0
 source /home/cs504306/node/bin/activate
 
-export PYTHONPATH=/home/cs504306/NODE-MPC-MHE/:$PYTHONPATH
+export PYTHONPATH=/home/cs504306/hybrid_mpc_mhe/:$PYTHONPATH
 
 python ./train_nn.py @data_params.txt @model_params.txt --n_threads $SLURM_CPUS_PER_TASK

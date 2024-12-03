@@ -6,8 +6,8 @@ import argparse
 from torch.optim import Adam
 import torch.nn as nn
 
-from src.model_fitting.NeuralODE import NeuralODE
-from src.model_fitting.FlightDataset import FlightDataset
+from src.neural_ode.NeuralODE import NeuralODE
+from src.neural_ode.FlightDataset import FlightDataset
 from src.utils.utils import features_to_idx
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 
