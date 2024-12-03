@@ -1,8 +1,6 @@
 --n_hidden
 16
 32
-63
-32
 16
 8
 --activation_hidden=tanh
