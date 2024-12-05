@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="quad_name"/>
+    <arg name="use_ekf" default="True"/>
+    <arg name="odom_rate" default="100"/>
+
+    <node pkg="vrpn_client_ros" type="vrpn_client_node" name="mocap" output="screen">
+        <param name="server" value="192.168.50.121"/>
+        <param name="update_frequency" value="100"/>
+        <param name="use_server_time" value="false"/>
+        <param name="broadcast_tf" value="true"/>
+        <param name="frame_id" value="world"/>
+        <param name="refresh_tracker_frequency" value="1"/>
+        <remap from="/mocap/$(arg quad_name)/pose" to="/mavros/vision_pose/pose"/>
+    </node>
+
+    <node pkg="gp_rhce" type="mocap_odom_node.py" name="mocap_odom_wrapper" output="screen">
+        <param name="quad_name" value="$(arg quad_name)"/>
+        <param name="odom_rate" value="$(arg odom_rate)"/>
+        <param name="use_ekf" value="$(arg use_ekf)"/>
+        <remap from="/mocap/$(arg quad_name)/pose" to="/mavros/vision_pose/pose"/>
+    </node>
+    
+    <node name="visualizer_node" pkg="gp_rhce" type="visualizer_node.py" output="screen"/>
+
+</launch>

@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- "gazebo" or "arena" to indicate the environment-->
+    <arg name="env" default="arena"/>
+    <!-- Quad Name -->
+    <arg name="quad_name" default=""/>
+
+    <!-- Reference trajectory parameters -->
+    <arg name="n_seeds" default="1"/> <!-- How many random seeds to use to generate trajectories -->
+    <arg name="trajectory_speeds" default="[4.0]"/>
+    <arg name="flight_mode"/> <!-- one of: random, hover, loop, lemniscate -->
+    <arg name="plot" default="true"/>
+
+    
+    <group if="$(eval arg('env')=='gazebo')" ns="reference_trajectory_publisher">
+        <node pkg="gp_rhce" type="reference_publisher_node.py" name="ref_gen" output="screen">
+            <rosparam file="$(find gp_rhce)/config/$(arg env)/gazebo_traj_options.yaml"/>
+            <param name="quad_name" value="$(arg quad_name)"/>
+            <param name="n_seeds" value="$(arg n_seeds)"/>
+            <param name="v_list" value="$(arg trajectory_speeds)"/>
+            <param name="mode" value="$(arg flight_mode)"/>
+            <param name="plot" value="$(arg plot)"/>
+            <param name="environment" value="$(arg env)"/>
+            
+            <remap from="reference" to="/gp_mpc/reference"/>
+            <remap from="busy" to="/mpc/busy"/>
+        </node>
+    </group>
+
+    <group if="$(eval arg('env')=='arena')" ns="reference_trajectory_publisher">
+        <node pkg="gp_rhce" type="reference_publisher_node.py" name="ref_gen" output="screen">
+            <rosparam file="$(find gp_rhce)/config/$(arg env)/arena_traj_options.yaml"/>
+            <param name="quad_name" value="$(arg quad_name)"/>
+            <param name="n_seeds" value="$(arg n_seeds)"/>
+            <param name="v_list" value="$(arg trajectory_speeds)"/>
+            <param name="mode" value="$(arg flight_mode)"/>
+            <param name="plot" value="$(arg plot)"/>
+            <param name="environment" value="$(arg env)"/>
+
+            <remap from="reference" to="/gp_mpc/reference"/>
+            <remap from="busy" to="/mpc/busy"/>
+        </node>
+    </group>
+</launch>

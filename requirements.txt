@@ -22,3 +22,4 @@ setuptools>=68.1
 scikit-build>=0.17
 cmake>=3.27
 ninja>=1.11
+empy==3.3.4

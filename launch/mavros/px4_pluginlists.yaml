@@ -1,0 +1,64 @@
+plugin_blacklist:
+# common
+- mocap
+- mag_calibration
+- log_transfer
+- statustext
+- obstacle
+- adsb
+- cam_imu_sync
+- camera
+- cellular_status
+- debug_value
+- 3dr_radio
+- actuator_control
+- safety_area
+- altitude
+- autopilot_version
+# - command
+- ftp
+- global_position
+- hil
+- home_position
+# - imu
+- local_position
+- manual_control
+- param
+- mount
+- mount_control
+- rc_io
+- safety_area
+- setpoint_accel
+- setpoint_attitude
+- setpoint_position
+# - setpoint_raw
+- setpoint_trajectory
+- setpoint_velocity
+# - sys_status
+- sys_time
+- vfr_hud
+- waypoint
+- wind_estimation
+# extras
+- image_pub
+- vibration
+- distance_sensor
+- rangefinder
+- wheel_odometry
+- px4flow
+- fake_gps
+- gps_status
+- gps_rtk
+- gps_input
+- play_tune
+- terrain
+- trajectory
+- rallypoint
+- tunnel
+- obstacle
+- nav_controller_output
+- landing_target
+- geofence
+- guided_target 
+plugin_whitelist: []
+#- 'sys_*'

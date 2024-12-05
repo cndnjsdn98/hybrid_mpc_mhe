@@ -36,12 +36,30 @@ This package utilizes the CPU only version of L4Casadi package that is utilized 
 pip install torch>=2.0 --index-url https://download.pytorch.org/whl/cpu
 ```
 
-3. Install [PyTorch Implementation of Differential ODE Solvers](https://github.com/rtqichen/torchdiffeq)
+3. Install [PyTorch Implementation of Gaussian Process](https://gpytorch.ai/)
+'''
+pip install gpytorch
+'''
+
+4. Install [PyTorch Implementation of Differential ODE Solvers](https://github.com/rtqichen/torchdiffeq)
 ```
 pip install torchdiffeq
 ```
 
-3. Install [L4CasADi](https://github.com/Tim-Salzmann/l4casadi)
+5. Install [L4CasADi](https://github.com/Tim-Salzmann/l4casadi)
 ```
 pip install l4casadi --no-build-isolation
+```
+
+# Setup Catkin Workspace
+
+```
+https://github.com/ethz-asl/mav_comm.git
+<!-- git clone git@github.com:cndnjsdn98/rotors_simulator.git
+git clone git@github.com:uzh-rpg/rpg_quadrotor_control.git
+vcs-import < rpg_quadrotor_control/dependencies.yaml -->
+
+git clone https://github.com/mavlink/mavlink.git --recursive
+
+
 ```
