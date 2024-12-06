@@ -6,7 +6,7 @@ import numpy as np
 
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 from src.utils.utils import v_dot_q, quaternion_state_mse, features_to_idx, world_to_body_velocity_mapping
-from src.quad_opt.quad import custom_quad_param_loader
+from src.quad_opt.quad import Quadrotor
 from src.quad_opt.quad_optimizer_mpc import QuadOptimizerMPC
 from src.neural_ode.NeuralODE import load_neural_ode
 from src.gp.GPyModelWrapper import GPyModelWrapper
@@ -45,6 +45,13 @@ class MPCNode:
         self.init_subscribers()
 
         rate = rospy.Rate(1)
+        
+        if not self.x_available:
+            rospy.loginfo("MPC: Waitign for System States...")
+            while(not self.x_available and not rospy.is_shutdown()):
+                rate.sleep()    
+
+        rospy.loginfo("MPC: %s Loaded in %s"%(self.quad_name, self.env))
         while not rospy.is_shutdown():
             # Publish if MPC is busy with a current trajectory
             msg = Bool()
@@ -56,7 +63,7 @@ class MPCNode:
     def init_params(self):
         ns = rospy.get_namespace()
         # System environment
-        self.environment = rospy.get_param("/environment", default="gazebo")
+        self.env = rospy.get_param("/environment", default="gazebo")
         self.quad_name = rospy.get_param("/quad_name", default=None)
         assert self.quad_name != None
         self.use_groundtruth = rospy.get_param("/use_groundtruth", default=True)
@@ -107,10 +114,10 @@ class MPCNode:
         """
         ns = rospy.get_namespace()
         # Publisher topic names
-        control_topic = rospy.get_param("~control_topic", default="/" + self.quad_name + "/autopilot/control_command_input")
-        motor_thrust_topic = rospy.get_param("~motor_thrust_topic", default="/" + self.quad_name + "/motor_thrust")
-        record_topic = rospy.get_param("~motor_thrust", default="/" + self.quad_name + "/motor_thrust")
-        status_topic = rospy.get_param("~mpc_status_topic", default="/mpc/busy")
+        control_topic = rospy.get_param("/control_topic", default="/" + self.quad_name + "/autopilot/control_command_input")
+        motor_thrust_topic = rospy.get_param("/motor_thrust_topic", default="/" + self.quad_name + "/motor_thrust")
+        record_topic = rospy.get_param("/record_topic", default="/" + self.quad_name + "/record")
+        status_topic = rospy.get_param("/mpc_status_topic", default="/mpc/busy")
         # control_gz_topic = rospy.get_param("~control_gz_topic", default="/" + self.quad_name + "/autopilot/control_command_input")
 
         # Publishers
@@ -123,8 +130,8 @@ class MPCNode:
         self.status_pub = rospy.Publisher(status_topic, Bool, queue_size=1, tcp_nodelay=True)
         
     def init_rosservice(self):
-        set_mode_srvc = rospy.get_param("~set_mode_srvc", default="/mavros/set_mode")
-        arming_srvc = rospy.get_param("~arming_srvc", default="/mavros/cmd/arming")
+        set_mode_srvc = rospy.get_param("/set_mode_srvc", default="/mavros/set_mode")
+        arming_srvc = rospy.get_param("/arming_srvc", default="/mavros/cmd/arming")
         self.set_mode_client = rospy.ServiceProxy(set_mode_srvc, SetMode)
         self.arming_client = rospy.ServiceProxy(arming_srvc, CommandBool)
 
@@ -134,24 +141,27 @@ class MPCNode:
         ns = rospy.get_namespace()
 
         # Subscriber topic names
-        ref_topic = rospy.get_param("~ref_topic", default="/reference")
-        state_est_topic = rospy.get_param("~state_est_topic", default= "/" + self.quad_name + "/state_est")
-        odom_topic = rospy.get_param("~odom_topic", default="/" + self.quad_name + "/ground_truth/odometry")
-        land_topic = rospy.get_param("~land", default="/" + self.quad_name + "/land")
+        ref_topic = rospy.get_param("/ref_topic", default="/reference")
+        state_est_topic = rospy.get_param("/state_est_topic", default= "/" + self.quad_name + "/state_est")
+        odom_topic = rospy.get_param("/odom_topic", default="/" + self.quad_name + "/ground_truth/odometry")
+        land_topic = rospy.get_param("/land", default="/" + self.quad_name + "/land")
 
         # Subscribers        
         self.ref_sub = rospy.Subscriber(ref_topic, ReferenceTrajectory, self.reference_callback)
         if self.use_groundtruth:
-            self.state_est_sub = rospy.Subscriber(state_est_topic, Odometry, self.state_est_callback, queue_size=1, tcp_nodelay=True)
-        else:
             self.state_est_sub = rospy.Subscriber(odom_topic, Odometry, self.state_est_callback, queue_size=1, tcp_nodelay=True)
+        else:
+            self.state_est_sub = rospy.Subscriber(state_est_topic, Odometry, self.state_est_callback, queue_size=1, tcp_nodelay=True)
         self.land_sub = rospy.Subscriber(land_topic, Empty, self.land_callback)
 
     def init_mpc(self):
+        # Binary variable to run MPC only once every other odometry callback
+        self.optimize_next = False
+
         ns = rospy.get_namespace()
         # MPC Parameters
         self.control_freq_factor = rospy.get_param(ns + "control_freq_factor", default=5)
-        self.use_nn = rospy.get_params(ns + "use_nn", default=False)
+        self.use_nn = rospy.get_param(ns + "use_nn", default=False)
         self.n_mpc = rospy.get_param(ns + 'n_mpc', default=10)
         self.t_mpc = rospy.get_param(ns + 't_mpc', default=1)
 
@@ -167,7 +177,7 @@ class MPCNode:
         r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param(ns + "r_mpc", default=0.1)
 
         # Load Quad Instance
-        self.quad = custom_quad_param_loader(self.quad_name)
+        self.quad = Quadrotor(self.quad_name)
 
         # Load NN models
         if (self.use_nn):
@@ -179,15 +189,7 @@ class MPCNode:
             self.nn_output_idx = features_to_idx(self.output_features)
             self.correction_mode = rospy.get_param(ns + "correction_mode", default="online")
             self.nn_model = load_model(self.model_name)
-        else:
-            self.model_name = None
-            self.model_type = None
-            self.input_features = None
-            self.output_features = None
-            self.nn_model = None
-            self.nn_corr_i = None
-            
-        self.nn_params = {
+            self.nn_params = {
                 'model_name': self.model_name,
                 'model_type': self.model_type,
                 'input_features': self.input_features,
@@ -197,10 +199,21 @@ class MPCNode:
                 "correction_mode": self.correction_mode,
                 'nn_model': self.nn_model,
             }
+        else:
+            self.nn_params = {}
+            # self.model_name = None
+            # self.model_type = None
+            # self.input_features = None
+            # self.nn_input_idx = None
+            # self.output_features = None
+            # self.nn_output_idx = None
+            # self.correction_mode = None
+            # self.nn_model = None
+            self.nn_corr_i = None
+            
         # Compile Acados Model
         self.quad_opt = QuadOptimizerMPC(self.quad, t_mpc=self.t_mpc, n_mpc=self.n_mpc,
                                          q_mpc=q_mpc, qt_factor=qt_factor, r_mpc=r_mpc, 
-                                         quad_name=self.quad_name,
                                          use_nn=self.use_nn, nn_params=self.nn_params)
     
     def land_callback(self, msg):
@@ -220,6 +233,7 @@ class MPCNode:
         """
         Callback function for reference trajectory
         """
+        print(msg.seq_len)
         if (not self.ref_received):
             self.ref_len = msg.seq_len
             # TODO: This functionality not tested
@@ -256,7 +270,7 @@ class MPCNode:
                     input = np.append(input, self.u_ref, axis=1)
                 self.nn_corr = self.nn_model.predict(input)
 
-            if self.t_ref:
+            if len(self.t_ref) > 0:
                 rospy.loginfo("New trajectory received. Time duration: %.2f s" % self.t_ref[-1])
                 self.ref_received = True
             else:
@@ -273,10 +287,10 @@ class MPCNode:
 
         # Check if landing mode
         if self.land_override:
-            x_ref = self.last_x_ref if self.last_x_ref is not None else self.x.copy()
+            x_ref = self.last_x_ref if self.last_x_ref is not None else np.array(self.x)[np.newaxis, :]
             dz = np.sign(self.land_z - self.x[2]) * self.land_dz
-            x_ref[2] = min(self.land_z, self.x[2] + dz) if dz > 0 else max(self.land_z, self.x[2] + dz)
-            u_ref = self.last_u_ref if self.last_u_ref is not None else np.array([0, 0, 0, 0])
+            x_ref[0, 2] = min(self.land_z, self.x[2] + dz) if dz > 0 else max(self.land_z, self.x[2] + dz)
+            u_ref = self.last_u_ref if self.last_u_ref is not None else np.array([[0, 0, 0, 0]])
 
             # TODO: Disarming drone
             # Reached landing heigh
@@ -302,9 +316,9 @@ class MPCNode:
         # If reference trajectory not received, pick current position as ref
         if (not self.ref_received):
             if self.x_ref_prov is None:
-                self.x_ref_prov = self.x
+                self.x_ref_prov = np.array(self.x)[np.newaxis, :]
                 self.x_ref_prov[7:] = 0 # Set velocity states to zero
-                self.u_ref_prov = np.array([0, 0, 0, 0])  
+                self.u_ref_prov = np.array([[0, 0, 0, 0]])  
                 rospy.loginfo("Selecting current position as provisional setpoint.")
             x_ref = self.x_ref_prov
             u_ref = self.u_ref_prov
@@ -332,19 +346,19 @@ class MPCNode:
                 msg.data = True
                 self.record_pub.publish(msg)
                 # Set reference to initial reference trajectory point
-                x_ref = self.x_ref[0, :]
-                u_ref = self.u_ref[0, :]
+                x_ref = self.x_ref[np.newaxis, 0, :]
+                u_ref = self.u_ref[np.newaxis, 0, :]
             else:
                 # Initial point not reached yet
                 # Fly towards initial position of trajectory
-                x_ref = self.x_ref[0, :]
-                u_ref = np.array([0, 0, 0, 0])
+                x_ref = self.x_ref[np.newaxis, 0, :]
+                u_ref = np.array([[0, 0, 0, 0]])
                 dx = self.init_v * np.sign(self.x_ref[0, 0] - self.x[0])
                 dy = self.init_v * np.sign(self.x_ref[0, 1] - self.x[1])
                 dz = self.init_v * np.sign(self.x_ref[0, 2] - self.x[2])
-                x_ref[0] = min(self.x_ref[0, 0], self.x[0] + dx) if dx > 0 else max(self.x_ref[0, 0], self.x[0] + dx)
-                x_ref[1] = min(self.x_ref[0, 1], self.x[1] + dy) if dy > 0 else max(self.x_ref[0, 1], self.x[1] + dy)
-                x_ref[2] = min(self.x_ref[0, 2], self.x[2] + dz) if dz > 0 else max(self.x_ref[0, 2], self.x[2] + dz)
+                x_ref[0, 0] = min(self.x_ref[0, 0], self.x[0] + dx) if dx > 0 else max(self.x_ref[0, 0], self.x[0] + dx)
+                x_ref[0, 1] = min(self.x_ref[0, 1], self.x[1] + dy) if dy > 0 else max(self.x_ref[0, 1], self.x[1] + dy)
+                x_ref[0, 2] = min(self.x_ref[0, 2], self.x[2] + dz) if dz > 0 else max(self.x_ref[0, 2], self.x[2] + dz)
             
             # TODO: If with offline GP set params
 
@@ -374,8 +388,11 @@ class MPCNode:
         # End of reference reached
         elif (self.mpc_idx == self.ref_len):
             # Compute optimization dt
+            print(self.opt_dt)
             self.opt_dt /= self.mpc_idx
-            rospy.loginfo("Tracking complete. Mean MPC opt. time: %.3f ms"%self.opt_dt *1000)
+            self.opt_dt *= 1000
+            rospy.loginfo("Tracking complete. Mean MPC opt. time: %.3f ms"%self.opt_dt)
+            self.mpc_idx += 1
             # Lower drone to ground
             self.land_override = True
             rospy.loginfo("Landing...")
@@ -387,9 +404,10 @@ class MPCNode:
             self.record_pub.publish(msg)
 
             # Set reference to final position of trajectory
-            x_ref = self.x_ref[-1, :]
-            self.x_ref[7:] = 0 # Set velocity states to zero
-            self.u_ref = np.array([0, 0, 0, 0])
+            x_ref = self.x_ref[np.newaxis, -1, :]
+            x_ref[7:] = 0 # Set velocity states to zero
+            u_ref = np.array([[0, 0, 0, 0]])
+            
             # TODO: if offline GP set parameters
             return self.quad_opt.set_reference(x_ref, u_ref)
         
@@ -398,17 +416,16 @@ class MPCNode:
         Callback function for State Estimation
         """        
         p, q, v, w = odometry_parse(msg)
-        if self.environment == "gazebo" and self.use_groundtruth:
+        if self.env == "gazebo" and self.use_groundtruth:
             v_w = v_dot_q(np.array(v), np.array(q)).tolist()
         else:
             v_w = v
         self.x = p + q + v_w + w
 
-        # TODO: Change to x_available
         self.x_available = True
         
         def _mpc_thread_func():
-            self.run_mpc(msg)
+            self.run_mpc()
 
         # We only optimize once every two odometry messages
         if not self.optimize_next:
@@ -473,7 +490,7 @@ class MPCNode:
 
         # Publish controls
         control_method = 'w'
-        if self.environment == "gazebo":
+        if self.env == "gazebo":
             control_cmd_msg = ControlCommand()
             control_cmd_msg.header = Header()
             control_cmd_msg.header.stamp = rospy.Time.now()
@@ -486,7 +503,7 @@ class MPCNode:
             if self.ground_level:
                 collective_thrust *= 0.01
             control_cmd_msg.collective_thrust = collective_thrust
-        elif self.environment == "arena":
+        elif self.env == "arena":
             control_cmd_msg = AttitudeTarget()
             control_cmd_msg.header = Header()
             control_cmd_msg.header.stamp = rospy.Time.now()

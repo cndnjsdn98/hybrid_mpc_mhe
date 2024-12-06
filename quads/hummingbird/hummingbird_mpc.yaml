@@ -19,5 +19,5 @@ land_dz: 0.1
 land_z_thr: 0.05
 
 # Approaching Init. Pos.
-init_thr: 0.3
+init_thr: 0.1
 init_v: 0.5

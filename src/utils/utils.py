@@ -212,6 +212,9 @@ def features_to_idx(features):
     """
     Converts string input of input/output features to corresponding state indexes
     """
+    if features is None:
+        return None
+    
     q = [3, 4, 5, 6]
     v= [7, 8, 9]
     w = [10, 11, 12]
@@ -255,16 +258,17 @@ def parse_xacro_file(xacro):
 
     attrib_dict = {}
 
-    for node in tree.getroot().getchildren():
+    for node in tree.getroot():
         # Get attributes
         attributes = node.attrib
 
         if 'value' in attributes.keys():
             attrib_dict[attributes['name']] = attributes['value']
 
-        if node.getchildren():
+        children = list(node)
+        if children:
             try:
-                attrib_dict[attributes['name']] = [child.attrib for child in node.getchildren()]
+                attrib_dict[attributes['name']] = [child.attrib for child in children]
             except:
                 continue
 

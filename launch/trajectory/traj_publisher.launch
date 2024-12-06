@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <launch>
     <!-- "gazebo" or "arena" to indicate the environment-->
-    <arg name="env" default="arena"/>
+    <arg name="env" default="gazebo"/>
     <!-- Quad Name -->
-    <arg name="quad_name" default=""/>
+    <arg name="quad_name" default="hummingbird"/>
 
     <!-- Reference trajectory parameters -->
     <arg name="n_seeds" default="1"/> <!-- How many random seeds to use to generate trajectories -->
     <arg name="trajectory_speeds" default="[4.0]"/>
-    <arg name="flight_mode"/> <!-- one of: random, hover, loop, lemniscate -->
+    <arg name="flight_mode" default="lemniscate"/> <!-- one of: random, hover, loop, lemniscate -->
     <arg name="plot" default="true"/>
 
     

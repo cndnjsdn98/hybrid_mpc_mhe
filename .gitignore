@@ -51,7 +51,7 @@ qtcreator-*
 CATKIN_IGNORE
 
 # Results
-results/*
+# results/*
 
 # Pyc cache
 */__pycache__/
@@ -62,3 +62,7 @@ results/*
 **/libtorch/
 
 gp_models/**
+
+acados_ocp/
+acados_ocp/mpc/
+acados_ocp/mhe/

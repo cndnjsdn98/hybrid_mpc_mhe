@@ -23,16 +23,15 @@ import rospy
 import l4casadi as l4c
 
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
-from src.quad_opt.quad import custom_quad_param_loader
 from src.utils.utils import v_dot_q, skew_symmetric
+from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
+from src.quad_opt.quad import Quadrotor
 
-from src.gp.GPyModelWrapper import GPyModelWrapper
 class QuadOptimizerMPC:
-    def __init__(self, quad, t_mpc=1, n_mpc=10, 
+    def __init__(self, quad:Quadrotor, t_mpc=1, n_mpc=10, 
                  q_mpc=None, qt_factor=None,r_mpc=None, 
-                 quad_name=None, solver_options=None, 
-                 use_nn=False, nn_params={},
-                 compile_acados=True):
+                 solver_options=None, 
+                 use_nn=False, nn_params={}):
         """
         :param quad: quadrotor object
         :type quad: Quadrotor3D
@@ -75,22 +74,20 @@ class QuadOptimizerMPC:
         self.x_opt = np.zeros((self.N + 1, 13))
         self.u_opt = np.zeros((self.N, 4))
         self.opt_dt = 0
-
-        # functions of the state and input vectors used for propagating states 
-        # to compute model errors
-        self.quad_xdot_prop = self.quad_dynamics()
+        
+        self.acados_models_dir = DirConfig.ACADOS_MODEL_DIR
 
         # Nominal model equations symbolic function (no GP)
-        self.quad_xdot_nominal = self.quad_dynamics()
+        self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u, self.param)
 
         # Build full model for MPC. Will have 13 variables. self.dyn_x contains the symbolic variable that
         # should be used to evaluate the dynamics function. It corresponds to self.x if there are no GP's, or
         # self.x_with_gp otherwise
         acados_model, dynamics = self.acados_setup_model(
-            self.quad_xdot_nominal(x=self.x, u=self.u, p=self.mpc_param)['x_dot'])
+            self.quad_xdot_nominal(x=self.x, u=self.u, p=self.param)['x_dot'])
         
         # Convert dynamics variables to functions of the state and input vectors
-        self.quad_xdot = cs.Function('x_dot', [self.x, self.u, self.mpc_param], [dynamics], ['x', 'u', 'p'], ['x_dot'])
+        self.quad_xdot = cs.Function('x_dot', [self.x, self.u, self.param], [dynamics], ['x', 'u', 'p'], ['x_dot'])
 
         # Weighted squared error loss function q = (p_xyz, a_xyz, v_xyz, r_xyz), r = (u1, u2, u3, u4)
         if q_mpc is None:
@@ -138,7 +135,7 @@ class QuadOptimizerMPC:
         self.u = cs.vertcat(u1, u2, u3, u4)
 
         # Model Corrections using NN
-        self.mpc_param = np.array([])
+        self.param = np.array([])
         if self.use_nn:
             if self.correction_mode == "offline":
                 self.nn_corr = cs.MX.sym('d', len(self.nn_output_idx))
@@ -149,7 +146,7 @@ class QuadOptimizerMPC:
                     vb_corr = self.nn_corr[v_idx]
                     vw_corr = v_dot_q(vb_corr, self.x[3:7])
                     self.nn_corr[v_idx] = vw_corr
-                self.mpc_param = cs.vertcat(self.nn_corr)
+                self.param = cs.vertcat(self.nn_corr)
             elif self.correction_mode == "online":
                 # Model variables for Online predictions
                 # Used as initial state for NN prediction
@@ -185,7 +182,7 @@ class QuadOptimizerMPC:
                     vb_corr = self.nn_corr[v_idx]
                     vw_corr = v_dot_q(vb_corr, self.x[3:7])
                     self.nn_corr[v_idx] = vw_corr
-                self.mpc_param = cs.vertcat(nn_input, self.trigger_var)
+                self.param = cs.vertcat(nn_input, self.trigger_var)
 
             self.B_x = np.zeros((13, len(self.nn_output_idx)))
             for i, idx in enumerate(self.nn_output_idx):
@@ -209,7 +206,7 @@ class QuadOptimizerMPC:
         x_dot_ = self.x_dot
         x_ = self.x
         u_ = self.u
-        param_ = self.mpc_param
+        param_ = self.param
 
         acados_model = AcadosModel()
         acados_model.f_expl_expr = dynamics_
@@ -245,8 +242,8 @@ class QuadOptimizerMPC:
         ocp_mpc.acados_include_path = acados_source_path + '/include'
         ocp_mpc.acados_lib_path = acados_source_path + '/lib'
         ocp_mpc.model = model
-        ocp_mpc.dims.N = self.N_mpc
-        ocp_mpc.solver_options.tf = self.T_mpc
+        ocp_mpc.dims.N = self.N
+        ocp_mpc.solver_options.tf = self.T
 
         # Initialize parameters
         ocp_mpc.dims.np = n_param
@@ -291,89 +288,6 @@ class QuadOptimizerMPC:
 
         return ocp_mpc
 
-    def quad_dynamics(self):
-        """
-        Symbolic dynamics of the 3D quadrotor model. The state consists on: [p_xyz, a_wxyz, v_xyz, r_xyz]^T, where p
-        stands for position, a for angle (in quaternion form), v for velocity and r for body rate. The input of the
-        system is: [u_1, u_2, u_3, u_4], i.e. the activation of the four thrusters.
-
-        :return: CasADi function that computes the analytical differential state dynamics of the quadrotor model.
-        Inputs: 'x' state of quadrotor (6x1) and 'u' control input (2x1). Output: differential state vector 'x_dot'
-        (6x1)
-        """
-        x_dot = cs.vertcat(self.p_dynamics(), self.q_dynamics(), self.v_dynamics(), self.w_dynamics())
-        return cs.Function('x_dot', [self.x, self.u], [x_dot], ['x', 'u'], ['x_dot'])
-
-    def p_dynamics(self):
-        return self.v
-
-    def q_dynamics(self):
-        return 1 / 2 * cs.mtimes(skew_symmetric(self.r), self.q)
-
-    def v_dynamics(self):
-        g = cs.vertcat(0.0, 0.0, 9.81)
-        f_thrust = self.u * self.quad.max_thrust
-        a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.quad.mass + self.load_m)
-
-        v_dynamics = v_dot_q(a_thrust, self.q) - g
-
-        return v_dynamics
-
-    def w_dynamics(self):
-        f_thrust = self.u * self.quad.max_thrust
-
-        y_f = cs.MX(self.quad.y_f)
-        x_f = cs.MX(self.quad.x_f)
-        c_f = cs.MX(self.quad.z_l_tau)
-        return cs.vertcat(
-            (cs.mtimes(f_thrust.T, y_f) + (self.quad.J[1] - self.quad.J[2]) * self.r[1] * self.r[2]) / self.quad.J[0],
-            (-cs.mtimes(f_thrust.T, x_f) + (self.quad.J[2] - self.quad.J[0]) * self.r[2] * self.r[0]) / self.quad.J[1],
-            (cs.mtimes(f_thrust.T, c_f) + (self.quad.J[0] - self.quad.J[1]) * self.r[0] * self.r[1]) / self.quad.J[2])
-
-    def discretize_dynamics(self, t_horizon, m_steps_per_point=1):
-        """
-        Integrates the symbolic dynamics and cost equations until the time horizon using a RK4 method.
-        :param t_horizon: time horizon in seconds
-        :param m_steps_per_point: number of integrations steps
-        :return: a symbolic function that computes the dynamics integration
-        """
-
-        # Fixed step Runge-Kutta 4 integrator
-        dt = t_horizon / m_steps_per_point
-        u = self.u
-        x0 = self.x
-
-        for _ in range(m_steps_per_point):
-            k1 = self.quad_xdot_prop(x=self.x, u=u)['x_dot']
-            k2 = self.quad_xdot_prop(x=self.x + dt / 2 * k1, u=u)['x_dot']
-            k3 = self.quad_xdot_prop(x=self.x + dt / 2 * k2, u=u)['x_dot']
-            k4 = self.quad_xdot_prop(x=self.x + dt * k3, u=u)['x_dot']
-            x_out = self.x + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-        return cs.Function('F', [x0, u], [x_out], ['x0', 'u'], ['xf'])
-    
-
-    def forward_prop(self, x_0, u_seq, t_horizon, m_int_steps=1):
-        """
-        Propagates forward the state estimate described by the mean vector x_0 and the covariance matrix covar, and a
-        sequence of inputs for the system u_seq. These inputs can either be numerical or symbolic.
-
-        :param x_0: initial mean state of the state probability density function. Vector of length m
-        :param u_seq: sequence of flattened N control inputs. I.e. vector of size N*4
-        :param t_horizon: time horizon corresponding to sequence of inputs
-        :param m_int_steps: number of intermediate integration steps per control node.
-        :return: The sequence of mean and covariance estimates for every corresponding input, as well as the computed
-        cost for each stage.
-        """
-        if not isinstance(x_0, np.ndarray):
-            x_0 = np.array(x_0)
-
-        f_func = self.discretize_dynamics(t_horizon, m_int_steps)
-        fk = f_func(x0=x_0, u=u_seq)
-        xf = np.squeeze(np.array(fk['xf']))
-
-        return xf
-
     def set_reference(self, x_ref, u_ref):
         """
         Sets the reference trajectory.
@@ -383,8 +297,7 @@ class QuadOptimizerMPC:
         :param u_target: Nx4-dimensional target control input vector (u1, u2, u3, u4)
         """
         # Set the reference for the given reference length 
-        print(x_ref)
-        ref_len = len(x_ref)
+        ref_len = x_ref.shape[0]
         for j in range(ref_len-1):
             ref = np.concatenate((x_ref[j, :], u_ref[j, :]))
             self.acados_mpc_solver.set(j, "yref", ref)
@@ -458,4 +371,4 @@ class QuadOptimizerMPC:
         return self.x_opt, self.u_opt
     
     def get_opt_dt(self):
-        return self.opt_dt
+        return self.opt_dt[0]

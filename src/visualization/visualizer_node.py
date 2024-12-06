@@ -16,12 +16,11 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from quadrotor_msgs.msg import ControlCommand
-from gp_rhce.msg import ReferenceTrajectory
+from hybrid_mpc_mhe.msg import ReferenceTrajectory
 
-from src.quad_opt.quad_optimizer import QuadOptimizer
+from src.quad_opt.quad import Quadrotor
 from src.utils.utils import v_dot_q, quaternion_inverse, safe_mkdir_recursive, vw_to_vb, rmse
 from src.visualization.visualization import trajectory_tracking_results, state_estimation_results
-from src.quad_opt.quad import custom_quad_param_loader
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 
 class VisualizerWrapper:
@@ -29,30 +28,30 @@ class VisualizerWrapper:
         # Get Params
         self.quad_name = None
         while self.quad_name is None:
-            self.quad_name = rospy.get_param("gp_mpc/quad_name", default=None)
+            self.quad_name = rospy.get_param("/quad_name", default=None)
             rospy.sleep(1)
             
-        self.env = rospy.get_param("gp_mpc/environment", default="arena")
+        self.env = rospy.get_param("/environment", default="arena")
         
-        self.quad = custom_quad_param_loader(self.quad_name)
-        self.quad_opt = QuadOptimizer(self.quad)
+        self.quad = Quadrotor(self.quad_name, prop=True)
 
-        self.t_mpc = rospy.get_param("gp_mpc/t_mpc", default=1)
-        self.n_mpc = rospy.get_param("gp_mpc/n_mpc", default=10)
-        self.t_mhe = rospy.get_param("gp_mhe/t_mhe", default=0.5)
-        self.n_mhe = rospy.get_param("gp_mhe/n_mhe", default=50)
-        self.use_groundtruth = rospy.get_param("gp_mpc/use_groundtruth", default=True)
-        self.mpc_with_gp = rospy.get_param("gp_mpc/with_gp", default=False)
-        self.mhe_with_gp = rospy.get_param("gp_mhe/with_gp", default=False)
-        self.mhe_type = rospy.get_param("gp_mhe/mhe_type", default=None)
+        self.t_mpc = rospy.get_param("/mpc/t_mpc", default=1)
+        self.n_mpc = rospy.get_param("/mpc/n_mpc", default=10)
+        self.use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=True)
+        self.mpc_use_nn = rospy.get_param("/mpc/use_nn", default=False)
+        self.mpc_model_name = rospy.get_param("/mpc/model_name", default=None)
+        self.mpc_model_type = rospy.get_param("/mpc/model_type", default=None)
+        self.mpc_correction_mode = rospy.get_param("/mpc/correction_mode", default=None)
+
+        self.t_mhe = rospy.get_param("/mhe/t_mhe", default=0.5)
+        self.n_mhe = rospy.get_param("/mhe/n_mhe", default=50)
+        self.mhe_with_gp = rospy.get_param("/mhe/with_gp", default=False)
+        self.mhe_type = rospy.get_param("/mhe/mhe_type", default=None)
         # Override since K-MHE never uses GP
         if self.mhe_type == "kinematic":
             self.mhe_with_gp = False
 
-        ns = rospy.get_namespace()
-        self.results_dir = rospy.get_param("results_dir", default=None)
-        if self.results_dir is None:
-            self.results_dir = DirConfig.FLIGHT_DATA_DIR
+        self.results_dir = DirConfig.FLIGHT_DATA_DIR
 
         assert self.results_dir is not None
         self.mpc_meta = {
@@ -61,7 +60,10 @@ class VisualizerWrapper:
             't_mpc': self.t_mpc,
             'n_mpc': self.n_mpc,
             'gt': self.use_groundtruth,
-            'with_gp': self.mpc_with_gp,
+            'use_nn': self.mpc_use_nn,
+            'model_type': self.mpc_model_type,
+            'model_name': self.mpc_model_name,
+            'correction_mode': self.mpc_correction_mode,
         }
         self.mhe_meta = {
             'quad_name': self.quad_name,
@@ -128,15 +130,14 @@ class VisualizerWrapper:
         self.a_meas = None
 
         # Subscriber topic names
-        odom_topic = rospy.get_param("/gp_mhe/odom_topic", default = "/" + self.quad_name + "/ground_truth/odometry")
-        imu_topic = rospy.get_param("/gp_mhe/imu_topic", default = "/mavros/imu/data_raw") 
-        state_est_topic = rospy.get_param("/gp_mhe/state_est_topic", default = "/" + self.quad_name + "/state_est")
-        acceleration_est_topic = rospy.get_param("/gp_mhe/acceleration_est_topic", default = "/" + self.quad_name + "/acceleration_est")
-        motor_thrust_topic = rospy.get_param("/gp_mpc/motor_thrust_topic", default = "/" + self.quad_name + "/motor_thrust")
-        ref_topic = rospy.get_param("/gp_mpc/ref_topic", default = "/gp_mpc/reference")
-        control_topic = rospy.get_param("/gp_mpc/control_topic", default = "/mavros/setpoint_raw/attitude")
-        control_gz_topic = rospy.get_param("/gp_mpc/control_gz_topic", default = "/" + self.quad_name + "/autopilot/control_command_input")
-        record_topic = rospy.get_param("/gp_mpc/record_topic", default = "/" + self.quad_name + "/record")
+        odom_topic = rospy.get_param("/odom_topic", default = "/" + self.quad_name + "/ground_truth/odometry")
+        imu_topic = rospy.get_param("/mhe/imu_topic", default = "/mavros/imu/data_raw") 
+        state_est_topic = rospy.get_param("/state_est_topic", default = "/" + self.quad_name + "/state_est")
+        acceleration_est_topic = rospy.get_param("/mhe/acceleration_est_topic", default = "/" + self.quad_name + "/acceleration_est")
+        motor_thrust_topic = rospy.get_param("/motor_thrust_topic", default = "/" + self.quad_name + "/motor_thrust")
+        ref_topic = rospy.get_param("/ref_topic", default = "/mpc/reference")
+        control_topic = rospy.get_param("/control_topic", default = "/mavros/setpoint_raw/attitude")
+        record_topic = rospy.get_param("/record_topic", default = "/" + self.quad_name + "/record")
 
         # Subscribers
         self.imu_sub = rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=1, tcp_nodelay=False)
@@ -146,11 +147,10 @@ class VisualizerWrapper:
         self.acceleration_est_sub = rospy.Subscriber(acceleration_est_topic, Imu, self.acceleration_est_callback, queue_size=10, tcp_nodelay=False)
         self.ref_sub = rospy.Subscriber(ref_topic, ReferenceTrajectory, self.ref_callback, queue_size=1, tcp_nodelay=False)
         self.control_sub = rospy.Subscriber(control_topic, AttitudeTarget, self.control_callback, queue_size=1, tcp_nodelay=False)
-        self.control_gz_sub = rospy.Subscriber(control_gz_topic, ControlCommand, self.control_gz_callback, queue_size=1, tcp_nodelay=False)
         self.record_sub = rospy.Subscriber(record_topic, Bool, self.record_callback, queue_size=1, tcp_nodelay=False)
 
         rospy.loginfo("Visualizer on standby listening...")
-        rospy.loginfo("MPC w/%s GP"% ("OUT" if not self.mpc_with_gp else ""))
+        rospy.loginfo("MPC w/%s NN"% ("OUT" if not self.mpc_use_nn else ""))
         if self.mhe_type is not None:
             rospy.loginfo("%s MHE w/%s GP"%(self.mhe_type, "OUT" if not self.mhe_with_gp else ""))
 
@@ -205,7 +205,7 @@ class VisualizerWrapper:
             dt = self.t_act[ii+1] - self.t_act[ii]
 
             # Dynamic Model Pred
-            x_pred = self.quad_opt.forward_prop(x0, u, t_horizon=dt)
+            x_pred = self.quad.forward_prop(x0, u, t_horizon=dt)
             # x_pred = x_pred[-1, np.newaxis, :]
             x_pred_B = vw_to_vb(x_pred)
             
@@ -474,17 +474,6 @@ class VisualizerWrapper:
         w_control = [msg.body_rate.x, msg.body_rate.y, msg.body_rate.z]
         # collective_thrust = msg.thrust
         
-        self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
-        # self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
-        # self.collective_thrusts = np.append(self.collective_thrusts, collective_thrust)
-
-    def control_gz_callback(self, msg):
-        if not self.record:
-            return
-        
-        w_control = [msg.bodyrates.x, msg.bodyrates.y, msg.bodyrates.z]
-        # collective_thrust = msg.thrusts
-
         self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
         # self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
         # self.collective_thrusts = np.append(self.collective_thrusts, collective_thrust)

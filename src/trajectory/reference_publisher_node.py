@@ -13,8 +13,8 @@ this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
 from std_msgs.msg import Bool
-from gp_rhce.msg import ReferenceTrajectory
-from src.quad_opt.quad import custom_quad_param_loader
+from hybrid_mpc_mhe.msg import ReferenceTrajectory
+from src.quad_opt.quad import Quadrotor
 from src.trajectory.trajectories import circle_trajectory, random_trajectory, lemniscate_trajectory, hover_trajectory
 import numpy as np
 import rospy
@@ -24,15 +24,15 @@ class ReferenceGenerator:
 
     def __init__(self):
 
-        self.gp_mpc_busy = True
+        self.mpc_busy = True
 
         rospy.init_node("reference_generator")
 
         plot = rospy.get_param('~plot', default=True)
 
-        quad_name = rospy.get_param('~quad_name', default=None)
+        quad_name = rospy.get_param('/quad_name', default=None)
         assert quad_name != None
-        quad = custom_quad_param_loader(quad_name)
+        quad = Quadrotor(quad_name)
 
         # Configuration for random flight mode
         n_seeds = rospy.get_param('~n_seeds', default=1)
@@ -60,13 +60,13 @@ class ReferenceGenerator:
         map_limits = rospy.get_param('~world_limits', default=None)
 
         # Control at 50 hz. Use time horizon=1 and 10 nodes
-        n_mpc_nodes = rospy.get_param('~n_nodes', default=10)
-        t_horizon = rospy.get_param('~t_horizon', default=1.0)
-        control_freq_factor = rospy.get_param('~control_freq_factor', default=5 if quad_name == "hummingbird" else 5)
+        n_mpc_nodes = rospy.get_param('/mpc/n_nodes', default=10)
+        t_horizon = rospy.get_param('/mpc/t_horizon', default=1.0)
+        control_freq_factor = rospy.get_param('/mpc/control_freq_factor', default=5 if quad_name == "hummingbird" else 5)
         opt_dt = t_horizon / (n_mpc_nodes * control_freq_factor)
 
-        reference_topic = "reference"
-        status_topic = "busy"
+        reference_topic = rospy.get_param('/ref_topic', default="/reference")
+        status_topic = rospy.get_param('/mpc_status_topic', default="/mpc/busy")
         reference_pub = rospy.Publisher(reference_topic, ReferenceTrajectory, queue_size=1)
         rospy.Subscriber(status_topic, Bool, self.status_callback)
 
@@ -78,23 +78,23 @@ class ReferenceGenerator:
         curr_trajectory_ind = 0
 
         # Environment
-        env = rospy.get_param('~environment', default='gazebo')
+        env = rospy.get_param('/environment', default='gazebo')
 
         rate = rospy.Rate(0.2)
         while not rospy.is_shutdown():
             # NOTE: HOVER MODE IS NOT BEING ACCEPTED BY MPC NODE RIGHT NOW
-            # if not self.gp_mpc_busy and mode == "hover":
+            # if not self.mpc_busy and mode == "hover":
             #     rospy.loginfo("Sending hover-in-place command")
             #     msg = ReferenceTrajectory()
             #     reference_pub.publish(msg)
             #     rospy.signal_shutdown("All trajectories were sent to the MPC")
             #     break
 
-            if not self.gp_mpc_busy and curr_trajectory_ind == n_trajectories:
+            if not self.mpc_busy and curr_trajectory_ind == n_trajectories:
                 rospy.signal_shutdown("All trajectories were sent to the MPC")
                 break
 
-            if not self.gp_mpc_busy and mode == "circle":
+            if not self.mpc_busy and mode == "circle":
                 rospy.loginfo("Sending increasing speed circular trajectory")
                 x_ref, t_ref, u_ref = circle_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z,
                                                       lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
@@ -110,9 +110,9 @@ class ReferenceGenerator:
 
                 reference_pub.publish(msg)
                 curr_trajectory_ind += 1
-                self.gp_mpc_busy = True
+                self.mpc_busy = True
 
-            elif not self.gp_mpc_busy and mode == "lemniscate":
+            elif not self.mpc_busy and mode == "lemniscate":
                 rospy.loginfo("Sending increasing speed lemniscate trajectory")
                 x_ref, t_ref, u_ref = lemniscate_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z, z_dim=z_dim,
                                                             lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
@@ -128,9 +128,9 @@ class ReferenceGenerator:
 
                 reference_pub.publish(msg)
                 curr_trajectory_ind += 1
-                self.gp_mpc_busy = True
+                self.mpc_busy = True
 
-            elif not self.gp_mpc_busy and mode == "random":
+            elif not self.mpc_busy and mode == "random":
 
                 speed = v_list[v_ind]
                 log_msg = "Random trajectory generator %d/%d. Seed: %d. Mean vel: %.3f m/s" % \
@@ -149,7 +149,7 @@ class ReferenceGenerator:
 
                 reference_pub.publish(msg)
                 curr_trajectory_ind += 1
-                self.gp_mpc_busy = True
+                self.mpc_busy = True
 
                 if v_ind + 1 < len(v_list):
                     v_ind += 1
@@ -157,7 +157,7 @@ class ReferenceGenerator:
                     seed += 1
                     v_ind = 0
 
-            elif not self.gp_mpc_busy and mode == "hover":
+            elif not self.mpc_busy and mode == "hover":
                 rospy.loginfo("Sending hover trajectory")
                 x_ref, t_ref, u_ref = hover_trajectory(quad, opt_dt, lin_acc=loop_a, radius=loop_r,
                                                         z=loop_z, z_dim=z_dim, map_name=map_limits, 
@@ -173,9 +173,9 @@ class ReferenceGenerator:
 
                 reference_pub.publish(msg)
                 curr_trajectory_ind += 1
-                self.gp_mpc_busy = True
+                self.mpc_busy = True
 
-            elif not self.gp_mpc_busy:
+            elif not self.mpc_busy:
                 raise ValueError("Unknown trajectory type: %s" % mode)
 
             rate.sleep()
@@ -186,7 +186,8 @@ class ReferenceGenerator:
         :param msg: Message from the subscriber
         :type msg: Bool
         """
-        self.gp_mpc_busy = msg.data
+        self.mpc_busy = msg.data
+
 
 
 if __name__ == "__main__":
