@@ -1,0 +1,11 @@
+{
+    "quad_name": "hummingbird",
+    "env": "gazebo",
+    "t_mhe": 0.5,
+    "n_mhe": 50,
+    "with_gp": false,
+    "mhe_type": "kinematic",
+    "p_rmse": 0.4059346072697464,
+    "q_rmse": 0.06956480471892826,
+    "v_rmse": 1.0937885016248656
+}

@@ -1,0 +1,9 @@
+{
+    "quad_name": "hummingbird",
+    "env": "gazebo",
+    "t_mpc": 1,
+    "n_mpc": 10,
+    "gt": true,
+    "with_gp": false,
+    "rmse": 0.18245177536210405
+}
