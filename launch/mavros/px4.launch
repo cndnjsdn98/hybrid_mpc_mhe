@@ -10,8 +10,8 @@
 	  <arg name="respawn_mavros" default="false" />
 
 	  <include file="$(find mavros)/launch/node.launch">
-		    <arg name="pluginlists_yaml" value="$(find gp_rhce)/launch/mavros/px4_pluginlists.yaml" />
-            <arg name="config_yaml" value="$(find gp_rhce)/launch/mavros/px4_config.yaml" />
+		    <arg name="pluginlists_yaml" value="$(find hybrid_mpc_mhe)/launch/mavros/px4_pluginlists.yaml" />
+            <arg name="config_yaml" value="$(find hybrid_mpc_mhe)/launch/mavros/px4_config.yaml" />
 
             <arg name="fcu_url" value="$(arg fcu_url)" />
 		    <arg name="gcs_url" value="$(arg gcs_url)" />

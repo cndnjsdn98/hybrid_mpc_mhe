@@ -1,3 +1,5 @@
+control_freq_factor: 5
+
 # MPC Costs
 q_p: 35
 q_q: 25
@@ -10,3 +12,12 @@ r_mpc: 0.1
 x_features: [7, 8, 9]
 y_features: [7, 8, 9]
 gp_model_name: ""
+
+# Landing options
+land_z: 0.15
+land_dz: 0.15
+land_z_thr: 0.15
+
+# Approaching Init. Pos.
+init_thr: 0.45
+init_v: 0.1

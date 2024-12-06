@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import rospy
 import threading
 import numpy as np
@@ -54,10 +56,10 @@ class MPCNode:
     def init_params(self):
         ns = rospy.get_namespace()
         # System environment
-        self.environment = rospy.get_param("~environment", default="gazebo")
-        self.quad_name = rospy.get_param("~quad_name", default=None)
+        self.environment = rospy.get_param("/environment", default="gazebo")
+        self.quad_name = rospy.get_param("/quad_name", default=None)
         assert self.quad_name != None
-        self.use_groundtruth = rospy.get_param("~use_groundtruth", default=True)
+        self.use_groundtruth = rospy.get_param("/use_groundtruth", default=True)
 
         # Initial flight parameters
         self.init_thr = rospy.get_param(ns + "init_thr", default=0.5)
@@ -510,8 +512,6 @@ class MPCNode:
         motor_thrust_msg.angular_velocities = u_opt[0]
         self.motor_thrust_pub.publish(motor_thrust_msg)
 def main():
-    rospy.init_node("mpc")
-
     # Load parameters?
 
     MPCNode()

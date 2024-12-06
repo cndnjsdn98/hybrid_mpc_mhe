@@ -5,15 +5,6 @@ imu_topic: "/hummingbird/ground_truth/imu"
 motor_thrust_topic: "/hummingbird/command/ros_gp_mpc/motor_thrust"
 record_topic: "/hummingbird/record_mhe"
 
-# Landing options
-land_z: 0.1
-land_dz: 0.1
-land_z_thr: 0.05
-
-# Approaching Init. Pos.
-init_thr: 0.3
-init_v: 0.5
-
 # Simulate Sensor Noise Levels
 sensor_noise: false
 # # Noise Level I ------------------

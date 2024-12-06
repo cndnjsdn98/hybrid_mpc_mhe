@@ -14,13 +14,13 @@
         <remap from="/mocap/$(arg quad_name)/pose" to="/mavros/vision_pose/pose"/>
     </node>
 
-    <node pkg="gp_rhce" type="mocap_odom_node.py" name="mocap_odom_wrapper" output="screen">
+    <node pkg="hybrid_mpc_mhe" type="mocap_odom_node.py" name="mocap_odom_wrapper" output="screen">
         <param name="quad_name" value="$(arg quad_name)"/>
         <param name="odom_rate" value="$(arg odom_rate)"/>
         <param name="use_ekf" value="$(arg use_ekf)"/>
         <remap from="/mocap/$(arg quad_name)/pose" to="/mavros/vision_pose/pose"/>
     </node>
     
-    <node name="visualizer_node" pkg="gp_rhce" type="visualizer_node.py" output="screen"/>
+    <node name="visualizer_node" pkg="hybrid_mpc_mhe" type="visualizer_node.py" output="screen"/>
 
 </launch>

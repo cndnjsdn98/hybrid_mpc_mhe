@@ -51,10 +51,25 @@ pip install torchdiffeq
 pip install l4casadi --no-build-isolation
 ```
 
+6. Install [Acados](https://docs.acados.org/index.html)
+
 # Setup Catkin Workspace
 
 ```
-vcs-import < hybird_mpc_mhe/dependencies.yaml
+sudo apt-get install ros-${ROS_DISTRO}-mavros ros-${ROS_DISTRO}-mavros-extras ros-${ROS_DISTRO}-mavros-msgs ros-${ROS_DISTRO}-mavlink
+```
+
+```
+wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh
+sudo bash ./install_geographiclib_datasets.sh
+```
+
+```
+rm ./install_geographiclib_datasets.sh
+```
+
+```
+vcs-import < hybrid_mpc_mhe/dependencies.yaml
 
 git clone https://github.com/mavlink/mavlink.git --recursive
 git clone https://github.com/PX4/PX4-Autopilot.git --recursive

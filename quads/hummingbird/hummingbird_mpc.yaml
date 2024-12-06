@@ -1,3 +1,5 @@
+control_freq_factor: 5
+
 # MPC Costs
 q_p: 50
 q_q: 5
@@ -10,3 +12,12 @@ r_mpc: 1
 x_features: [7, 8, 9]
 y_features: [7, 8, 9]
 gp_model_name: "a_hummingbird_mpc_-1-20"
+
+# Landing options
+land_z: 0.1
+land_dz: 0.1
+land_z_thr: 0.05
+
+# Approaching Init. Pos.
+init_thr: 0.3
+init_v: 0.5

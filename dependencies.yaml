@@ -23,3 +23,7 @@ repositories:
     type: git
     url: git@github.com:uzh-rpg/rpg_single_board_io.git
     version: master
+  rpg_quadrotor_control:
+    type: git
+    url: git@github.com:uzh-rpg/rpg_quadrotor_control.git
+    version: master

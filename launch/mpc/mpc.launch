@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Quad Name -->
+    <arg name="quad_name" default="hummingbird"/>
+    <!-- "gazebo" or "arena" to indicate the environment-->
+    <arg name="env" default="gazebo"/>
+
+    <!-- MPC Parameters -->
+    <arg name="t_mpc" default="1"/>
+    <arg name="n_mpc" default="10"/>
+
+    <!-- Use Ground truth Odometry instead of State Estimation -->
+    <arg name="use_groundtruth" default="True"/>
+
+    <rosparam file="$(find hybrid_mpc_mhe)/config/$(arg env)/$(arg env)_run.yaml"/>
+    <param name="environment" value="$(arg env)"/>
+    <param name="quad_name" value="$(arg quad_name)"/>
+    <param name="use_groundtruth" value="$(arg use_groundtruth)"/>
+
+    <node name="mpc" pkg="hybrid_mpc_mhe" type="mpc_node.py" output="screen">
+        <rosparam file="$(find hybrid_mpc_mhe)/quads/$(arg quad_name)/$(arg quad_name)_mpc.yaml"/>
+        <param name="t_mpc" value="$(arg t_mpc)"/>
+        <param name="n_mpc" value="$(arg n_mpc)"/>
+
+</launch>

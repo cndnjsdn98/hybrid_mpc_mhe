@@ -13,8 +13,8 @@
 
     
     <group if="$(eval arg('env')=='gazebo')" ns="reference_trajectory_publisher">
-        <node pkg="gp_rhce" type="reference_publisher_node.py" name="ref_gen" output="screen">
-            <rosparam file="$(find gp_rhce)/config/$(arg env)/gazebo_traj_options.yaml"/>
+        <node pkg="hybrid_mpc_mhe" type="reference_publisher_node.py" name="ref_gen" output="screen">
+            <rosparam file="$(find hybrid_mpc_mhe)/config/$(arg env)/gazebo_traj_options.yaml"/>
             <param name="quad_name" value="$(arg quad_name)"/>
             <param name="n_seeds" value="$(arg n_seeds)"/>
             <param name="v_list" value="$(arg trajectory_speeds)"/>
@@ -28,8 +28,8 @@
     </group>
 
     <group if="$(eval arg('env')=='arena')" ns="reference_trajectory_publisher">
-        <node pkg="gp_rhce" type="reference_publisher_node.py" name="ref_gen" output="screen">
-            <rosparam file="$(find gp_rhce)/config/$(arg env)/arena_traj_options.yaml"/>
+        <node pkg="hybrid_mpc_mhe" type="reference_publisher_node.py" name="ref_gen" output="screen">
+            <rosparam file="$(find hybrid_mpc_mhe)/config/$(arg env)/arena_traj_options.yaml"/>
             <param name="quad_name" value="$(arg quad_name)"/>
             <param name="n_seeds" value="$(arg n_seeds)"/>
             <param name="v_list" value="$(arg trajectory_speeds)"/>
