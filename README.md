@@ -54,12 +54,8 @@ pip install l4casadi --no-build-isolation
 # Setup Catkin Workspace
 
 ```
-https://github.com/ethz-asl/mav_comm.git
-<!-- git clone git@github.com:cndnjsdn98/rotors_simulator.git
-git clone git@github.com:uzh-rpg/rpg_quadrotor_control.git
-vcs-import < rpg_quadrotor_control/dependencies.yaml -->
+vcs-import < hybird_mpc_mhe/dependencies.yaml
 
 git clone https://github.com/mavlink/mavlink.git --recursive
 git clone https://github.com/PX4/PX4-Autopilot.git --recursive
-
 ```
