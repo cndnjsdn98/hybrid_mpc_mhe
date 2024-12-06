@@ -383,7 +383,8 @@ class QuadOptimizerMPC:
         :param u_target: Nx4-dimensional target control input vector (u1, u2, u3, u4)
         """
         # Set the reference for the given reference length 
-        ref_len = x_ref.shape[0]
+        print(x_ref)
+        ref_len = len(x_ref)
         for j in range(ref_len-1):
             ref = np.concatenate((x_ref[j, :], u_ref[j, :]))
             self.acados_mpc_solver.set(j, "yref", ref)
