@@ -208,7 +208,6 @@ class VisualizerWrapper:
             xf_B = vw_to_vb(xf)
 
             u = self.motor_thrusts[ii]
-            # _u = np.append(u, [0]) # Considering there is no mass change
 
             dt = self.t_act[ii+1] - self.t_act[ii]
 
@@ -260,9 +259,12 @@ class VisualizerWrapper:
             pickle.dump(mpc_dict, f)
         with open(os.path.join(mpc_dir, 'meta_data.json'), "w") as f:
             json.dump(self.mpc_meta, f, indent=4)
-        trajectory_tracking_results(mpc_dir, self.t_ref, mpc_t, self.x_ref, state_in,
-                                    self.u_ref, u_in, mpc_error, w_control=self.w_control, file_type='png')
-        
+        try:
+            trajectory_tracking_results(mpc_dir, self.t_ref, mpc_t, self.x_ref, state_in,
+                                        self.u_ref, u_in, mpc_error, w_control=self.w_control, file_type='png')
+        except Exception as e:
+            rospy.logerr(f"An error occurred while plotting trajectory tracking results: {e}")
+
         # Check MHE is running and if it is continue to save MHE results
         if len(self.x_est) > 0:
             mhe = True
@@ -350,14 +352,17 @@ class VisualizerWrapper:
             self.t_imu = self.t_imu[:self.seq_len * 2]
             self.y = self.y[:self.seq_len * 2]
             
-            if len(self.t_acc_est) > 0:
-                self.t_acc_est = self.t_acc_est[:self.seq_len * 2]
-                self.accel_est = self.accel_est[:self.seq_len * 2]
-                state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
-                                        mhe_error, t_acc_est=self.t_acc_est, accel_est=self.accel_est, file_type='png')
-            else:
-                state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
-                                        mhe_error, a_thrust=a_thrust_traj, a_meas=a_meas_traj, file_type='png', )
+            try:
+                if len(self.t_acc_est) > 0:
+                    self.t_acc_est = self.t_acc_est[:self.seq_len * 2]
+                    self.accel_est = self.accel_est[:self.seq_len * 2]
+                    state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
+                                            mhe_error, t_acc_est=self.t_acc_est, accel_est=self.accel_est, file_type='png')
+                else:
+                    state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
+                                            mhe_error, a_thrust=a_thrust_traj, a_meas=a_meas_traj, file_type='png', )
+            except Exception as e:
+                rospy.logerr(f"An error occurred while plotting state estimation results: {e}")    
         else:
             mhe = False
         # --- Reset all vectors ---

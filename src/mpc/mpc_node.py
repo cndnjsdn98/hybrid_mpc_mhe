@@ -65,7 +65,7 @@ class MPCNode:
         self.env = rospy.get_param("/environment", default="gazebo")
         self.quad_name = rospy.get_param("/quad_name", default=None)
         assert self.quad_name != None
-        self.use_groundtruth = rospy.get_param("/use_groundtruth", default=True)
+        self.use_groundtruth = rospy.get_param("~use_groundtruth", default=True)
 
         # Initial flight parameters
         self.init_thr = rospy.get_param("~init_thr", default=0.5)

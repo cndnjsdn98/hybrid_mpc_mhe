@@ -10,6 +10,60 @@ from src.neural_ode.NeuralODE import NeuralODE
 from src.neural_ode.FlightDataset import FlightDataset
 from src.utils.utils import features_to_idx
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
+from src.utils.job_control import *
+
+def exp_type_to_hyperparameters(args):
+    '''
+    Translate the exp_type into a hyperparameter set
+
+    This is trivial right now
+
+    :param args: ArgumentParser
+    :return: Hyperparameter set (in dictionary form)
+    '''
+    if args.exp_type == None:
+        p = {}
+    elif args.exp_type == "hidden":
+        p = {'n_hidden': [[16, 32, 32, 16, 8],
+                          [16, 32, 64, 32, 16],
+                          [16, 32, 16, 8]],
+            }
+    elif args.exp_type == "features":
+        p = {'input_features': ['qvwu', 'vwu', 'qvw', 'vw', 'v'],
+             'output_features': ['vw', 'v']}
+    else:
+        p = {}
+
+    return p
+
+def augment_args(args):
+    '''
+    Use the jobiterator to override the command-line arguments based on the experiment index. 
+
+    @return A string representing the selection of parameters to be used in the file name
+    '''
+    index = args.exp_index
+    if(index is None):
+        # UPDATE
+        return 
+    
+    # Create parameter sets to execute the experiment on.  This defines the Cartesian product
+    #  of experiments that we will be executing
+    p = exp_type_to_hyperparameters(args)
+
+    # Create the iterator
+    ji = JobIterator(p)
+    print("Total jobs:", ji.get_njobs())
+    
+    # Check bounds
+    assert (args.exp_index >= 0 and args.exp_index < ji.get_njobs()), "exp_index out of range"
+
+    # Print the parameters specific to this exp_index
+    print(ji.get_index(args.exp_index))
+    
+    # Push the attributes to the args object and return a string that describes these structures
+    return ji.set_attributes_by_index(args.exp_index, args)
+
 
 def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     """
@@ -164,6 +218,9 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Train Neural ODE', fromfile_prefix_chars='@')
+    # Exp type
+    parser.add_argument('--exp_type', type=str, default=None, help='Indicate the experiment to be executed')
+    parser.add_argument('--exp_index', type=int, default=None, help='Experiment index')
     # Data Params
     parser.add_argument('--quad_name', type=str, choices=['hummingbird', 'clara'], default='hummingbird')
     parser.add_argument('--train_trajectory_name', type=str, choices=['lemniscate', 'circle', 'random'], default='circle')
@@ -191,6 +248,9 @@ if __name__ == '__main__':
     # Training Params
     parser.add_argument('--n_threads', type=int, default=None)
     args = parser.parse_args()
+    
+    # Override arguments if we are using exp_index
+    _ = augment_args(args)
     
     if args.n_threads is not None:
         torch.set_num_threads(args.n_threads-1)

@@ -14,14 +14,21 @@
 
     <arg name="use_nn" default="False"/>
 
+    <arg name="record" default="True"/>
+
     <param name="environment" value="$(arg env)"/>
     <param name="quad_name" value="$(arg quad_name)"/>
-    <param name="use_groundtruth" value="$(arg use_groundtruth)"/>
 
     <node name="mpc" pkg="hybrid_mpc_mhe" type="mpc_node.py" output="screen">
         <rosparam file="$(find hybrid_mpc_mhe)/quads/$(arg quad_name)/$(arg quad_name)_mpc.yaml"/>
+        <param name="use_groundtruth" value="$(arg use_groundtruth)"/>
         <param name="t_mpc" value="$(arg t_mpc)"/>
         <param name="n_mpc" value="$(arg n_mpc)"/>
         <param name="use_nn" value="$(arg use_nn)"/>
     </node>
+
+    <group if="$(eval arg('record'))">
+        <node name="visualizer_node" pkg="hybrid_mpc_mhe" type="visualizer_node.py" output="screen"/>
+    </group>
+
 </launch>
