@@ -61,7 +61,6 @@ class MPCNode:
         return
     
     def init_params(self):
-        ns = rospy.get_namespace()
         # System environment
         self.env = rospy.get_param("/environment", default="gazebo")
         self.quad_name = rospy.get_param("/quad_name", default=None)
@@ -69,13 +68,13 @@ class MPCNode:
         self.use_groundtruth = rospy.get_param("/use_groundtruth", default=True)
 
         # Initial flight parameters
-        self.init_thr = rospy.get_param(ns + "init_thr", default=0.5)
-        self.init_v = rospy.get_param(ns + "init_v", default=0.3)
+        self.init_thr = rospy.get_param("~init_thr", default=0.5)
+        self.init_v = rospy.get_param("~init_v", default=0.3)
 
         # Landing Parameters
-        self.land_thr = rospy.get_param(ns + "land_thr", default=0.05)
-        self.land_z = rospy.get_param(ns + "land_z", default=0.05)
-        self.land_dz = rospy.get_param(ns + "land_dz", default=0.1)
+        self.land_thr = rospy.get_param("~land_thr", default=0.05)
+        self.land_z = rospy.get_param("~land_z", default=0.05)
+        self.land_dz = rospy.get_param("~land_dz", default=0.1)
 
         # Initialize State Variables
         self.x = None
@@ -112,7 +111,6 @@ class MPCNode:
         """
         Initialize ROS Publishers
         """
-        ns = rospy.get_namespace()
         # Publisher topic names
         control_topic = rospy.get_param("/control_topic", default="/" + self.quad_name + "/autopilot/control_command_input")
         motor_thrust_topic = rospy.get_param("/motor_thrust_topic", default="/" + self.quad_name + "/motor_thrust")
@@ -138,8 +136,6 @@ class MPCNode:
     def init_subscribers(self):
         '''
         '''
-        ns = rospy.get_namespace()
-
         # Subscriber topic names
         ref_topic = rospy.get_param("/ref_topic", default="/reference")
         state_est_topic = rospy.get_param("/state_est_topic", default= "/" + self.quad_name + "/state_est")
@@ -158,36 +154,35 @@ class MPCNode:
         # Binary variable to run MPC only once every other odometry callback
         self.optimize_next = False
 
-        ns = rospy.get_namespace()
         # MPC Parameters
-        self.control_freq_factor = rospy.get_param(ns + "control_freq_factor", default=5)
-        self.use_nn = rospy.get_param(ns + "use_nn", default=False)
-        self.n_mpc = rospy.get_param(ns + 'n_mpc', default=10)
-        self.t_mpc = rospy.get_param(ns + 't_mpc', default=1)
+        self.control_freq_factor = rospy.get_param("~control_freq_factor", default=5)
+        self.use_nn = rospy.get_param("~use_nn", default=False)
+        self.n_mpc = rospy.get_param("~n_mpc", default=10)
+        self.t_mpc = rospy.get_param("~t_mpc", default=1)
 
         # MPC Costs
-        q_p = np.ones((1,3)) * rospy.get_param(ns + 'q_p', default=35)
-        q_q = np.ones((1,3)) * rospy.get_param(ns + 'q_q', default=25)
-        q_v = np.ones((1,3)) * rospy.get_param(ns + 'q_v', default=10)
-        q_r = np.ones((1,3)) * rospy.get_param(ns + 'q_r', default=10)
+        q_p = np.ones((1,3)) * rospy.get_param("~q_p", default=35)
+        q_q = np.ones((1,3)) * rospy.get_param("~q_q", default=25)
+        q_v = np.ones((1,3)) * rospy.get_param("~q_v", default=10)
+        q_r = np.ones((1,3)) * rospy.get_param("~q_r", default=10)
 
-        qt_factor = rospy.get_param(ns + "qt_factor", default=1)
+        qt_factor = rospy.get_param("~qt_factor", default=1)
 
         q_mpc = np.squeeze(np.hstack((q_p, q_q, q_v, q_r)))
-        r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param(ns + "r_mpc", default=0.1)
+        r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param("~r_mpc", default=0.1)
 
         # Load Quad Instance
         self.quad = Quadrotor(self.quad_name)
 
         # Load NN models
         if (self.use_nn):
-            self.model_name = rospy.get_param(ns + "model_name", default=None)
-            self.model_type = rospy.get_param(ns + "model_type", default=None)
-            self.input_features = rospy.get_param(ns + "input_features", default=None)
+            self.model_name = rospy.get_param("~model_name", default=None)
+            self.model_type = rospy.get_param("~model_type", default=None)
+            self.input_features = rospy.get_param("~input_features", default=None)
             self.nn_input_idx = features_to_idx(self.input_features)
-            self.output_features = rospy.get_param(ns + "output_features", default=None)
+            self.output_features = rospy.get_param("~output_features", default=None)
             self.nn_output_idx = features_to_idx(self.output_features)
-            self.correction_mode = rospy.get_param(ns + "correction_mode", default="online")
+            self.correction_mode = rospy.get_param("~correction_mode", default="online")
             self.nn_model = load_model(self.model_name)
             self.nn_params = {
                 'model_name': self.model_name,
@@ -233,7 +228,6 @@ class MPCNode:
         """
         Callback function for reference trajectory
         """
-        print(msg.seq_len)
         if (not self.ref_received):
             self.ref_len = msg.seq_len
             # TODO: This functionality not tested
@@ -336,7 +330,7 @@ class MPCNode:
         # Check if starting position of trajectory has been reached
         if (not self.x_initial_reached):
             mask = [1] * 9 + [0] * 3
-            if (quaternion_state_mse(np.array(self.x), self.x_ref[0, :], mask) < self.init_thr): 
+            if (quaternion_state_mse(np.array(self.x), self.x_ref[0, :], mask) < self.init_thr and not self.x_initial_reached): 
                 # Initial Point reached
                 self.x_initial_reached = True
                 self.opt_dt = 0
@@ -346,12 +340,13 @@ class MPCNode:
                 msg.data = True
                 self.record_pub.publish(msg)
                 # Set reference to initial reference trajectory point
-                x_ref = self.x_ref[np.newaxis, 0, :]
+                x_ref = np.array([self.x_ref[0, :]])
                 u_ref = self.u_ref[np.newaxis, 0, :]
             else:
                 # Initial point not reached yet
                 # Fly towards initial position of trajectory
-                x_ref = self.x_ref[np.newaxis, 0, :]
+                # x_ref = self.x_ref[np.newaxis, 0, :]
+                x_ref = np.array([self.x_ref[0, :]])
                 u_ref = np.array([[0, 0, 0, 0]])
                 dx = self.init_v * np.sign(self.x_ref[0, 0] - self.x[0])
                 dy = self.init_v * np.sign(self.x_ref[0, 1] - self.x[1])
@@ -388,7 +383,6 @@ class MPCNode:
         # End of reference reached
         elif (self.mpc_idx == self.ref_len):
             # Compute optimization dt
-            print(self.opt_dt)
             self.opt_dt /= self.mpc_idx
             self.opt_dt *= 1000
             rospy.loginfo("Tracking complete. Mean MPC opt. time: %.3f ms"%self.opt_dt)

@@ -4,7 +4,7 @@ control_freq_factor: 5
 imu_topic: "/hummingbird/ground_truth/imu"
 motor_thrust_topic: "/hummingbird/command/ros_gp_mpc/motor_thrust"
 record_topic: "/hummingbird/record_mhe"
-
+control_topic: "/hummingbird/autopilot/control_command_input"
 # Simulate Sensor Noise Levels
 sensor_noise: false
 # # Noise Level I ------------------

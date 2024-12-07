@@ -74,10 +74,15 @@ class VisualizerWrapper:
             'mhe_type': self.mhe_type
         }
         # Create MPC Directory
-        self.mpc_dataset_name = "%s%s_mpc_%s%s"%("gp_" if self.mpc_with_gp else "",
-                                                  self.env, 
-                                                  "gt_" if self.use_groundtruth else "", 
-                                                  self.quad_name)
+        if self.mpc_use_nn:
+            use_nn_str = "_%s_%s"%(self.mpc_model_type,
+                                    self.mpc_correction_mode)
+        else:
+            use_nn_str = ""
+        self.mpc_dataset_name = "%s_mpc_%s%s%s"%(self.env, 
+                                                 "gt_" if self.use_groundtruth else "", 
+                                                 self.quad_name,
+                                                 use_nn_str)
         self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
         safe_mkdir_recursive(self.mpc_dir)
         # Create MHE Directory if MHE Type is given
@@ -92,7 +97,7 @@ class VisualizerWrapper:
 
         # Check every 1 second if MPC/MHE parameters have changed
         self.timer_use_gt = rospy.Timer(rospy.Duration(1), self.check_use_gt)
-        self.timer_mpc_with_gp = rospy.Timer(rospy.Duration(1), self.check_mpc_with_gp)
+        self.timer_mpc_use_nn = rospy.Timer(rospy.Duration(1), self.check_mpc_use_nn)
         self.timer_mhe_type = rospy.Timer(rospy.Duration(1), self.check_mhe_type)
         self.timer_mhe_with_gp = rospy.Timer(rospy.Duration(1), self.check_mhe_with_gp)
 
@@ -135,8 +140,8 @@ class VisualizerWrapper:
         state_est_topic = rospy.get_param("/state_est_topic", default = "/" + self.quad_name + "/state_est")
         acceleration_est_topic = rospy.get_param("/mhe/acceleration_est_topic", default = "/" + self.quad_name + "/acceleration_est")
         motor_thrust_topic = rospy.get_param("/motor_thrust_topic", default = "/" + self.quad_name + "/motor_thrust")
-        ref_topic = rospy.get_param("/ref_topic", default = "/mpc/reference")
-        control_topic = rospy.get_param("/control_topic", default = "/mavros/setpoint_raw/attitude")
+        ref_topic = rospy.get_param("/ref_topic", default = "/reference")
+        control_topic = rospy.get_param("/control_topic", default = "/" + self.quad_name + "/autopilot/control_command_input")
         record_topic = rospy.get_param("/record_topic", default = "/" + self.quad_name + "/record")
 
         # Subscribers
@@ -146,7 +151,10 @@ class VisualizerWrapper:
         self.state_est_sub = rospy.Subscriber(state_est_topic, Odometry, self.state_est_callback, queue_size=1, tcp_nodelay=False)
         self.acceleration_est_sub = rospy.Subscriber(acceleration_est_topic, Imu, self.acceleration_est_callback, queue_size=10, tcp_nodelay=False)
         self.ref_sub = rospy.Subscriber(ref_topic, ReferenceTrajectory, self.ref_callback, queue_size=1, tcp_nodelay=False)
-        self.control_sub = rospy.Subscriber(control_topic, AttitudeTarget, self.control_callback, queue_size=1, tcp_nodelay=False)
+        if self.env == "gazebo":
+            self.control_sub = rospy.Subscriber(control_topic, ControlCommand, self.control_gz_callback, queue_size=1, tcp_nodelay=True)
+        elif self.env == "arena":
+            self.control_sub = rospy.Subscriber(control_topic, AttitudeTarget, self.control_callback, queue_size=1, tcp_nodelay=False)
         self.record_sub = rospy.Subscriber(record_topic, Bool, self.record_callback, queue_size=1, tcp_nodelay=False)
 
         rospy.loginfo("Visualizer on standby listening...")
@@ -478,6 +486,16 @@ class VisualizerWrapper:
         # self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
         # self.collective_thrusts = np.append(self.collective_thrusts, collective_thrust)
 
+    def control_gz_callback(self, msg):
+        if not self.record:
+            return
+        w_control = [msg.bodyrates.x, msg.bodyrates.y, msg.bodyrates.z]
+        # collective_thrust = msg.thrusts
+
+        self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
+        # self.w_control = np.append(self.w_control, np.array(w_control)[np.newaxis, :], axis=0)
+        # self.collective_thrusts = np.append(self.collective_thrusts, collective_thrust)
+
     def record_callback(self, msg):  
         if not self.record and msg.data == True:
             # Recording has begun
@@ -493,31 +511,49 @@ class VisualizerWrapper:
 
 
     def check_use_gt(self, event):
-        use_groundtruth = rospy.get_param("gp_mpc/use_groundtruth", default=None)
+        use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=None)
         if use_groundtruth is not None and self.use_groundtruth != use_groundtruth:
             self.use_groundtruth = use_groundtruth
             rospy.loginfo("%sUsing Groundtruth!"%("" if use_groundtruth else "NOT "))
-            self.mpc_dataset_name = "%s%s_mpc_%s%s"%("gp_" if self.mpc_with_gp else "",
-                                                      self.env, 
-                                                      "gt_" if self.use_groundtruth else "", 
-                                                      self.quad_name)
+            if self.mpc_use_nn:
+                use_nn_str = "_%s_%s"%(self.mpc_model_type,
+                                       self.mpc_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mpc_dataset_name = "%s_mpc_%s%s%s"%(self.env, 
+                                                     "gt_" if self.use_groundtruth else "", 
+                                                     self.quad_name,
+                                                     use_nn_str)
             self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
             safe_mkdir_recursive(self.mpc_dir)
             self.mpc_meta['gt'] = use_groundtruth
             # Create Directory
             safe_mkdir_recursive(self.mpc_dir)
 
-    def check_mpc_with_gp(self, event):
-        mpc_with_gp = rospy.get_param("gp_mpc/with_gp", default=None)
-        if mpc_with_gp is not None and self.mpc_with_gp != mpc_with_gp:
-            self.mpc_with_gp = mpc_with_gp
-            rospy.loginfo("MPC w/%s GP"% ("OUT" if not mpc_with_gp else ""))
-            self.mpc_dataset_name = "%s%s_mpc_%s%s"%("gp_" if self.mpc_with_gp else "",
-                                                      self.env, 
-                                                      "gt_" if self.use_groundtruth else "", 
-                                                      self.quad_name)
+    def check_mpc_use_nn(self, event):
+        mpc_use_nn = rospy.get_param("/mpc/use_nn", default=None)
+        if mpc_use_nn is not None and self.mpc_use_nn != mpc_use_nn:
+            self.mpc_use_nn = mpc_use_nn
+            self.mpc_model_name = rospy.get_param("/mpc/model_name", default=None)
+            self.mpc_model_type = rospy.get_param("/mpc/model_type", default=None)
+            self.mpc_correction_mode = rospy.get_param("/mpc/correction_mode", default=None)
+
+            rospy.loginfo("MPC w/%s"% ("OUT NN" if not mpc_use_nn else " %s"%self.mpc_model_type))
+            if self.mpc_use_nn:
+                use_nn_str = "_%s_%s"%(self.mpc_model_type,
+                                       self.mpc_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mpc_dataset_name = "%s_mpc_%s%s%s"%(self.env, 
+                                                     "gt_" if self.use_groundtruth else "", 
+                                                     self.quad_name,
+                                                     use_nn_str)
             self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
-            self.mpc_meta['with_gp'] = self.mpc_with_gp
+            self.mpc_meta['use_nn'] = self.mpc_use_nn
+            self.mpc_meta['model_type'] = self.mpc_model_type
+            self.mpc_meta['model_name'] = self.mpc_model_name
+            self.mpc_meta['correction_mode'] = self.mpc_correction_mode
+
             # Create Directory
             safe_mkdir_recursive(self.mpc_dir)
 

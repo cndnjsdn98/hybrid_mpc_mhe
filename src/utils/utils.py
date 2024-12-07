@@ -126,10 +126,8 @@ def quaternion_state_mse(x, x_ref, mask):
     :param mask: 12-dimensional masking for weighted MSE (p_xyz, q_xyz, v_xyz, r_xyz)
     :return: the mean squared error of both
     """
-
     q_error = q_dot_q(x[3:7], quaternion_inverse(x_ref[3:7]))
     e = np.concatenate((x[:3] - x_ref[:3], q_error[1:], x[7:10] - x_ref[7:10], x[10:] - x_ref[10:]))
-
     return np.sqrt((e * np.array(mask)).dot(e))
 
 def skew_symmetric(v):

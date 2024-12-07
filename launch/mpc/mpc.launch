@@ -14,7 +14,6 @@
 
     <arg name="use_nn" default="False"/>
 
-    <rosparam file="$(find hybrid_mpc_mhe)/config/$(arg env)/$(arg env)_run.yaml"/>
     <param name="environment" value="$(arg env)"/>
     <param name="quad_name" value="$(arg quad_name)"/>
     <param name="use_groundtruth" value="$(arg use_groundtruth)"/>

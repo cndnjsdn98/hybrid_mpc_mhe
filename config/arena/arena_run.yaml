@@ -1,6 +1,7 @@
 # Topic Names
 pose_topic: "/mavros/vision_pose/pose"
 imu_topic: "/mavros/imu/data_raw"
+control_topic: "/mavros/setpoint_raw/attitude"
 
 # Mass change values
 change_mass: 0

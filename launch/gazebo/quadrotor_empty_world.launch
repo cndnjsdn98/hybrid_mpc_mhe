@@ -19,6 +19,7 @@
   <arg name="verbose" default="false"/>
   <arg name="debug" default="false"/>
 
+  <rosparam file="$(find hybrid_mpc_mhe)/config/gazebo/gazebo_run.yaml"/>
   <!-- Basic simulation environment !-->
   <include file="$(find rpg_rotors_interface)/launch/basics/base_quad_simulation.launch">
     <arg name="quad_name" value="$(arg quad_name)"/>

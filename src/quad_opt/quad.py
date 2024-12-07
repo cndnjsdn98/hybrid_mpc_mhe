@@ -157,11 +157,11 @@ class Quadrotor:
         x0 = self.x
 
         for _ in range(m_steps_per_point):
-            k1 = self.quad_xdot_prop(x=self.x, u=u)['x_dot']
-            k2 = self.quad_xdot_prop(x=self.x + dt / 2 * k1, u=u)['x_dot']
-            k3 = self.quad_xdot_prop(x=self.x + dt / 2 * k2, u=u)['x_dot']
-            k4 = self.quad_xdot_prop(x=self.x + dt * k3, u=u)['x_dot']
-            x_out = x + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            k1 = self.quad_xdot_prop(x=x0, u=u)['x_dot']
+            k2 = self.quad_xdot_prop(x=x0 + dt / 2 * k1, u=u)['x_dot']
+            k3 = self.quad_xdot_prop(x=x0 + dt / 2 * k2, u=u)['x_dot']
+            k4 = self.quad_xdot_prop(x=x0 + dt * k3, u=u)['x_dot']
+            x_out = x0 + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
 
         return cs.Function('F', [x0, u], [x_out], ['x0', 'u'], ['xf'])
     

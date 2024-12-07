@@ -4,6 +4,8 @@
     <arg name="use_ekf" default="True"/>
     <arg name="odom_rate" default="100"/>
 
+    <rosparam file="$(find hybrid_mpc_mhe)/config/arena/arena_run.yaml"/>
+
     <node pkg="vrpn_client_ros" type="vrpn_client_node" name="mocap" output="screen">
         <param name="server" value="192.168.50.121"/>
         <param name="update_frequency" value="100"/>
