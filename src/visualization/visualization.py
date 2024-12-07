@@ -2,7 +2,8 @@ import casadi as cs
 import numpy as np
 import matplotlib.pyplot as plt
 from src.utils.utils import separate_variables, quaternion_inverse, \
-                            quaternion_to_euler, unwrap, q_dot_q, v_dot_q
+                            quaternion_to_euler, unwrap, q_dot_q, v_dot_q, \
+                            world_to_body_velocity_mapping
 from mpl_toolkits.mplot3d import Axes3D
 
 def trajectory_tracking_results(img_save_dir, t_ref, t_executed, x_ref, x_executed, u_ref, u_executed, mpc_error,
@@ -212,9 +213,10 @@ def trajectory_tracking_results(img_save_dir, t_ref, t_executed, x_ref, x_execut
                 transparent=False, bbox_inches=None, metadata=None)
     plt.close(fig)
 
+    x_executed_B = world_to_body_velocity_mapping(x_executed)
     fig, ax = plt.subplots(3, 1, figsize=(13, 14))
     for i in range(3):
-        ax[i].plot(x_executed[:, i+7], mpc_error[:, i+7], 'o', label=legend_labels[1])
+        ax[i].plot(x_executed_B[:, i+7], mpc_error[:, i+7], 'o', label=legend_labels[1])
         tit = 'dq_' + labels[i]
         ax[i].set_ylabel(tit)
         ax[i].legend()
