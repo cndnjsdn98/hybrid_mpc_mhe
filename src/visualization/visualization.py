@@ -217,7 +217,7 @@ def trajectory_tracking_results(img_save_dir, t_ref, t_executed, x_ref, x_execut
     fig, ax = plt.subplots(3, 1, figsize=(13, 14))
     for i in range(3):
         ax[i].plot(x_executed_B[:, i+7], mpc_error[:, i+7], 'o', label=legend_labels[1])
-        tit = 'dq_' + labels[i]
+        tit = 'dv_' + labels[i]
         ax[i].set_ylabel(tit)
         ax[i].legend()
         ax[i].grid()
