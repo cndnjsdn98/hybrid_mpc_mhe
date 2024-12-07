@@ -28,9 +28,12 @@ def exp_type_to_hyperparameters(args):
                           [16, 32, 64, 32, 16],
                           [16, 32, 16, 8]],
             }
-    elif args.exp_type == "features":
-        p = {'input_features': ['qvwu', 'vwu', 'qvw', 'vw', 'v'],
-             'output_features': ['vw', 'v']}
+    elif args.exp_type == "v_features":
+        p = {'input_features': ['vu', 'v'],
+             'output_features': ['v']}
+    elif args.exp_type == "vw_features":
+        p = {'input_features': ['vwu', 'vw'],
+             'output_features': ['vw']}
     else:
         p = {}
 
@@ -117,8 +120,7 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     # Flight Data Parameters
     if verbose >= 1:
         print("Loading Flight Data...")
-    v = [7, 8, 9]
-    w = [10, 11, 12]
+
     quad_name = data_params.get("quad_name", 'hummingbird').lower()
     train_trajectory_name = data_params.get('train_trajectory_name', 'circle').lower()
     valid_trajectory_name = data_params.get('valid_trajectory_name', 'lemniscate').lower()
@@ -143,11 +145,14 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     # Retrieve Training Data
     train_init, train_out, train_times = train_ds.get_ds(nn_input_idx, nn_output_idx)
     train_init = torch.Tensor(train_init[:, np.newaxis, :]).to(device)
+    print(train_init.shape)
     train_out = torch.Tensor(train_out[:, :, np.newaxis, :]).to(device)
     train_times = torch.Tensor(train_times).to(device)
     if 'u' in input_features:
         train_cmd = train_ds.get_cmd()
         train_cmd = torch.Tensor(train_cmd).to(device)
+    else:
+        train_cmd = None
     # Retrieve Validation Data
     valid_init, valid_out, valid_times = valid_ds.get_ds(nn_input_idx, nn_output_idx)
     valid_init = torch.Tensor(valid_init[:, np.newaxis, :]).to(device)
@@ -156,6 +161,8 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     if 'u' in input_features:
         valid_cmd = valid_ds.get_cmd()
         valid_cmd = torch.Tensor(valid_cmd).to(device)
+    else:
+        valid_cmd = None
     if verbose >= 1:
         print("Training and Validation Set initialized...")
     
@@ -234,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_hidden', type=int, nargs='+', default=[16, 32, 16])
     parser.add_argument('--activation_hidden', type=str, choices=['linear', 'relu', 'tanh', 'sigmoid', 'elu', 'leaky_relu'], default='tanh')
     parser.add_argument('--activation_out', type=str, choices=['linear', 'relu', 'tanh', 'sigmoid', 'elu', 'leaky_relu'], default='tanh')
-    parser.add_argument('--dropout', type=float, default=0)
+    parser.add_argument('--dropout', type=float, default=None)
     parser.add_argument('--batch_normalization', action='store_true')
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--lrate', type=float, default=1e-3)
