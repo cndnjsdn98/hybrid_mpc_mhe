@@ -1,6 +1,6 @@
 --quad_name=hummingbird
---train_trajectory_name=circle
---valid_trajectory_name=lemniscate
+--train_trajectory_name=lemniscate
+--valid_trajectory_name=circle
 --env=gazebo
 --gt
 --input_features=vwu

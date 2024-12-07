@@ -1,3 +1,4 @@
+--exp_typ=hidden
 --n_hidden
 16
 32
@@ -6,7 +7,7 @@
 8
 --activation_hidden=tanh
 --activation_out=linear
---epochs=20000
+--epochs=10000
 --lrate=1e-2
 --viz
 --valid_freq=20

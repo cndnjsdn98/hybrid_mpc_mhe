@@ -13,6 +13,7 @@
 #SBATCH --mail-user=w.choo@ou.edu
 #SBATCH --mail-type=ALL
 #SBATCH --chdir=/home/cs504306/hybrid_mpc_mhe/src/neural_ode/
+#SBATCH --array=0-2
 
 #################################################
 # Do not change this line unless you have your own python/tensorflow/keras set up
@@ -23,4 +24,4 @@ source /home/cs504306/node/bin/activate
 
 export PYTHONPATH=/home/cs504306/hybrid_mpc_mhe/:$PYTHONPATH
 
-python ./train_nn.py @data_params.txt @model_params.txt --n_threads $SLURM_CPUS_PER_TASK
+python ./train_nn.py @data_params.txt @model_params.txt --n_threads $SLURM_CPUS_PER_TASK --exp_index $SLURM_ARRAY_TASK_ID

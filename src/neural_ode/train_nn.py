@@ -24,7 +24,7 @@ def exp_type_to_hyperparameters(args):
     if args.exp_type == None:
         p = {}
     elif args.exp_type == "hidden":
-        p = {'n_hidden': [[16, 32, 32, 16, 8],
+        p = {'n_hidden': [[16, 32, 32, 16],
                           [16, 32, 64, 32, 16],
                           [16, 32, 16, 8]],
             }
