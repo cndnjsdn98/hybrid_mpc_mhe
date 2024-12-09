@@ -18,8 +18,6 @@ import os
 import sys
 import casadi as cs
 import numpy as np
-import threading
-import rospy
 import l4casadi as l4c
 
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
@@ -70,25 +68,20 @@ class QuadOptimizerMPC:
         # Init Casadi variables
         self.init_cs_vectors()
 
-        # Initi variables
+        # Init control variables
         self.x_opt = np.zeros((self.N + 1, 13))
         self.u_opt = np.zeros((self.N, 4))
         self.opt_dt = 0
         
         self.acados_models_dir = DirConfig.ACADOS_MODEL_DIR
 
-        # Nominal model equations symbolic function (no GP)
+        # Nominal model equations symbolic function (no NN)
         self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u, self.param)
 
-        # Build full model for MPC. Will have 13 variables. self.dyn_x contains the symbolic variable that
-        # should be used to evaluate the dynamics function. It corresponds to self.x if there are no GP's, or
-        # self.x_with_gp otherwise
+        # Build full model for MPC. Will have 13 variables.
         acados_model, dynamics = self.acados_setup_model(
             self.quad_xdot_nominal(x=self.x, u=self.u, p=self.param)['x_dot'])
         
-        # Convert dynamics variables to functions of the state and input vectors
-        self.quad_xdot = cs.Function('x_dot', [self.x, self.u, self.param], [dynamics], ['x', 'u', 'p'], ['x_dot'])
-
         # Weighted squared error loss function q = (p_xyz, a_xyz, v_xyz, r_xyz), r = (u1, u2, u3, u4)
         if q_mpc is None:
             q_mpc = np.array([10, 10, 10, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05])
@@ -308,10 +301,6 @@ class QuadOptimizerMPC:
         # the last MPC node has only a state reference but no input reference
         self.acados_mpc_solver.set(self.N, "yref", x_ref[-1, :]) 
 
-    def set_params(self, param):
-        for j in range(self.N):
-            self.acados_mpc_solver.set()
-    
     def solve_mpc(self, x0=None, u0=None, nn_corr=None):
         """
         Optimizes a trajectory to reach the pre-set target state, starting from the input initial state, that minimizes

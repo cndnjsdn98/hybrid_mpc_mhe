@@ -42,7 +42,7 @@ class ReferenceGenerator:
             v_list = [float(v.strip()) for v in v_list.split(',')]
 
         # Select if generate "random" trajectories, "hover" mode or increasing speed "circle" mode
-        mode = rospy.get_param('~mode', default="")
+        mode = rospy.get_param('~trajectory', default="")
         assert mode in ["circle", "lemniscate", "hover", "random"]
         if mode != "random":
             n_seeds = 1

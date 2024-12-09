@@ -189,6 +189,9 @@ def train_node(model_params:dict, data_params:dict, verbose=0, gpu=None):
     model_name = "%s_%s_%s"%("gz" if env.lower() == "gazebo" else "rt", 
                               input_features,
                               output_features)
+    if args.exp_type is not None:
+        model_name = model_name + "_%s_%d"%(args.exp_type,
+                                            args.exp_index)
     neuralODE = NeuralODE(model_name,
                           n_inputs, 
                           n_hidden,

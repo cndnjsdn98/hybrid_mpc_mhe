@@ -20,17 +20,18 @@ import numpy as np
 from acados_template import AcadosOcp, AcadosOcpSolver
 import rospy
 from scipy.linalg import block_diag
+import l4casadi as l4c
 
-from src.quad_opt.quad import custom_quad_param_loader
-from src.quad_opt.quad_optimizer import QuadOptimizer
+from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
+from src.utils.utils import v_dot_q, skew_symmetric
+from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
+from src.quad_opt.quad import Quadrotor
 
-class QuadOptimizerMHE(QuadOptimizer):
-    def __init__(self, quad, t_mhe=0.5, n_mhe=50, mhe_type="kinematic",
+class QuadOptimizerMHE:
+    def __init__(self, quad:Quadrotor, t_mhe=0.5, n_mhe=50, 
+                 mhe_type="k",
                  q_mhe=None, q0_factor=None, r_mhe=None, 
-                 model_name="quad_3d_acados_mhe",
-                 mhe_with_gp=False, y_features=[],
-                 change_mass=0,
-                 compile_acados=True):
+                 use_nn=False, nn_params={}):
         """
         :param quad: quadrotor object.
         :type quad: Quadrotor3D
@@ -46,51 +47,47 @@ class QuadOptimizerMHE(QuadOptimizer):
         :param change_mass: Value of varying payload mass 
         # TODO: Change the chage_mass to be boolean
         """
-        super().__init__(quad, t_mhe=t_mhe, n_mhe=n_mhe, mhe_type=mhe_type, 
-                         mhe_with_gp=mhe_with_gp)
+        # MHE Params
+        self.T = t_mhe
+        self.N = n_mhe
         self.mhe_type = mhe_type 
-        self.change_mass = change_mass
-        self.mhe_with_gp = mhe_with_gp
+        # Quad
+        self.quad = quad
+
+        # Use Data Driven (Neural Network) models
+        self.use_nn = use_nn
+        self.nn_params = nn_params
+        if self.use_nn:
+            self.model_name = self.nn_params['model_name']
+            self.model_type = self.nn_params['model_type']
+            self.input_features = self.nn_params['input_features']
+            self.nn_input_idx = self.nn_params['nn_input_idx']
+            self.output_features = self.nn_params['output_features']
+            self.nn_output_idx = self.nn_params['nn_output_idx']
+            self.correction_mode = self.nn_params['correction_mode']
+            self.nn_model = self.nn_params['nn_model']
+            if self.correction_mode == "online":
+                self.nn_model = l4c.L4CasADi(self.nn_mdoel, device="cpu")
+
+        # Init Casadi variables
+        self.init_cs_vectors()
+
+        # Init State est variables
+        self.x_est = np.zeros((1, self.state_dim))
+        self.x0_bar = None
+        self.opt_dt = 0
+        
+        self.acados_models_dir = DirConfig.ACADOS_MODEL_DIR
+
+        # Nominal model equations symbolic function (no NN)
+        self.quad_xdot_nominal = self.quad_dynamics()
+
+        # Build full model for MHE
+        acados_model, dynamics = self.acados_setup_model(
+            self.quad_xdot_nominal(x=self.x, u=self.u, w=self.w)['x_dot'])
 
         # Weighted squared error loss function q = (p_xyz, q_wxyz, v_xyz, r_xyz), r = (u1, u2, u3, u4)
-        if q_mhe is None:
-            # State noise std
-            # System Noise
-            w_p = np.ones((1,3)) * 0.004
-            w_q = np.ones((1,3)) * 0.01
-            w_v = np.ones((1,3)) * 0.005            # w_v = np.ones((1,3)) * 1
-            w_r = np.ones((1,3)) * 0.5
-            w_d = np.ones((1,3)) * 0.00001 # 0.0000001
-            w_a = np.ones((1,3)) * 0.05
-            w_m = np.ones((1,1)) * 0.0001
-            if mhe_type == "kinematic":
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_a)))
-            elif mhe_type == "dynamic":
-                if not self.mhe_with_gp:
-                    if change_mass != 0:
-                        q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_m)))
-                    else:
-                        q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r)))
-                else:
-                    if change_mass != 0:
-                        q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d, w_m)))
-                    else:
-                        q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d)))
-        if r_mhe is None:
-            # Measurement noise std
-            # Measurement Noise
-            v_p = np.ones((1,3)) * 0.002                 # Position (vicon)
-            v_r = np.ones((1,3)) * 1e-06    # Angular Velocity
-            v_a = np.ones((1,3)) * 1e-05                # Acceleration
-            v_d = np.ones((1,3)) * 0.0001            # Disturbance
-            # Inverse covariance
-            if mhe_type == "dynamic" and self.mhe_with_gp:
-                r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_d))) 
-            elif mhe_type == "dynamic" and not self.mhe_with_gp:
-                r_mhe = 1/np.squeeze(np.hstack((v_p, v_r)))
-            else:
-                r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_a))) 
-
+        assert q_mhe is None or r_mhe is None
         if q0_factor is None:
             q0_factor = 1
         self.x0_bar = None
@@ -99,48 +96,114 @@ class QuadOptimizerMHE(QuadOptimizer):
         print("Q_arrival_cost     = ", q_mhe * q0_factor)
         print("R_estimate         = ", r_mhe)
         print("###########################################################################################\n")
-
         # Add one more weight to the rotation (use quaternion norm weighting in acados)
         q_mhe = np.concatenate((q_mhe[:3], np.mean(q_mhe[3:6])[np.newaxis], q_mhe[3:]))
 
-        self.T_mhe = t_mhe  # Time horizon for MHE
-        self.N_mhe = n_mhe  # number of nodes within estimation horizon
-
-        if self.mhe_with_gp:
-            self.B_x = np.zeros((self.state_dim, len(y_features)))
-            for i, idx in enumerate(y_features):
-                self.B_x[idx, i] = 1
-
-            if self.n_param > 0:
-                self.B_x = np.append(self.B_x, np.zeros((self.n_param, self.B_x.shape[1])), axis=0)
-            self.q_hist = np.zeros((0, 4))
-            self.mhe_model_error = None
-
-        # Nominal model equations symbolic function (no GP)
-        self.quad_xdot_nominal = self.quad_dynamics(mhe=True, mhe_type=mhe_type)
-        # Build full model for MHE. Will have 13 variables. self.dyn_x contains the symbolic variable that
-        # should be used to evaluate the dynamics function. It corresponds to self.x if there are no GP's, or
-        # self.x_with_gp otherwise      
-        acados_models_mhe, nominal_with_gp_mhe = self.acados_setup_model(
-            self.quad_xdot_nominal(x=self.x, u=self.u, w=self.w)['x_dot'], model_name, mhe=True)
-        
-        # Convert dynamics variables to functions of the state and input vectors
-        for dyn_model_idx in nominal_with_gp_mhe.keys():
-            dyn = nominal_with_gp_mhe[dyn_model_idx]
-            self.quad_xdot_mhe[dyn_model_idx] = cs.Function('x_dot', [self.x, self.u, self.w], [dyn], ['x', 'u', 'w'], ['x_dot'])        
-
         # ### Setup and compile Acados OCP solvers ### #
-        if compile_acados:
-            for key_model in acados_models_mhe.values():
-                ocp_mhe, nyx, nx, nu = self.create_mhe_solver(key_model, q_mhe, q0_factor, r_mhe)
-                self.nyx = nyx
-                self.nx = nx
-                self.nu = nu
+        ocp_mhe = self.create_mhe_solver(acados_model, q_mhe, q0_factor, r_mhe)
+        # NOTE: self.nu = self.state_dim
 
-                # Compile acados OCP solver if necessary
-                json_file_mhe = os.path.join(self.acados_models_dir, "mhe", key_model.name + '.json')
-                self.acados_mhe_solver = AcadosOcpSolver(ocp_mhe, json_file=json_file_mhe)
+        # Compile acados OCP solver if necessary
+        json_file_mhe = os.path.join(self.acados_models_dir, "mhe", acados_model.name + '.json')
+        self.acados_mhe_solver = AcadosOcpSolver(ocp_mhe, json_file=json_file_mhe)
 
+    def init_cs_vectors(self):
+        # Declare model variables
+        self.p = cs.MX.sym('p', 3)  # position
+        self.q = cs.MX.sym('q', 4)  # angle quaternion (wxyz)
+        self.v = cs.MX.sym('v', 3)  # velocity
+        self.r = cs.MX.sym('r', 3)  # angle rate
+        # Full state vector (13-dimensional)
+        self.x = cs.vertcat(self.p, self.q, self.v, self.r)
+
+        # Full differential state vector 
+        self.p_dot = cs.MX.sym('p_dot', 3)
+        self.q_dot = cs.MX.sym('q_dot', 4)
+        self.v_dot_w = cs.MX.sym('v_dot_w', 3)
+        self.r_dot = cs.MX.sym('r_dot', 3)
+        self.x_dot = cs.vertcat(self.p_dot, self.q_dot, self.v_dot_w, self.r_dot)
+
+        # Declare model noise variables for MHE
+        self.w_p = cs.MX.sym('w_p', 3)  # position
+        self.w_q = cs.MX.sym('w_q', 4)  # angle quaternion (wxyz)
+        self.w_v = cs.MX.sym('w_v', 3)  # velocity
+        self.w_r = cs.MX.sym('w_r', 3)  # angle rate
+        self.w_a = cs.MX.sym('w_a', 3)  # linear acceleration
+        self.w = cs.vertcat(self.w_p, self.w_q, self.w_v, self.w_r)
+
+        # Model adjustments for MHE
+        if self.mhe_type == "k":
+            self.a = cs.MX.sym('a', 3)  # IMU acc measurement
+            self.a_dot = cs.MX.sym('a_dot', 3)
+            # Full state vector (16-dimensional)
+            self.x = cs.vertcat(self.x, self.a)
+            self.x_dot = cs.vertcat(self.x_dot, self.a_dot)
+            self.state_dim = 16
+            # Full state noise vector (16-dimensional)
+            self.w = cs.vertcat(self.w, self.w_a)
+            # Update input state vector
+            self.u = cs.vertcat()
+            # Full measurement state vector
+            self.y = cs.vertcat(self.p, self.r, self.a)
+        elif self.mhe_type == "d":
+            # Full state dim remains same
+            self.state_dim = 13
+            # Control input vector
+            u1 = cs.MX.sym('u1')
+            u2 = cs.MX.sym('u2')
+            u3 = cs.MX.sym('u3')
+            u4 = cs.MX.sym('u4')
+            self.u = cs.vertcat(u1, u2, u3, u4)
+            # Full measurement state vector
+            self.y = cs.vertcat(self.p, self.r)
+
+        self.param = np.array([])
+
+    def quad_dynamics(self):
+        """
+        Symbolic dynamics of the 3D quadrotor model to be used for MHE.
+        The dynamics is altered slightly from traditional model to be 
+        modelled for state estimation with respective measurements.
+        """
+        p_dyn = self.quad.p_dynamics(self.x)
+        q_dyn = self.quad.q_dynamics(self.x)
+        if self.mhe_type == "k":
+            g = cs.vertcat(0.0, 0.0, 9.81)
+            v_dyn = v_dot_q(self.a, self.q) - g
+            a_dyn = cs.vertcat(0, 0, 0)
+        elif self.mhe_type == "d":
+            v_dyn = self.quad.v_dynamics(self.x, self.u)
+            a_dyn = cs.vertcat()
+        r_dyn = cs.vertcat(0, 0, 0)
+        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn) + self.w
+        return cs.Function('x_dot_mhe', [self.x, self.u, self.w], [x_dot], ['x', 'u', 'w'], ['x_dot'])
+
+    def acados_setup_model(self, nominal):
+        """
+        Builds an Acados symbolic models using CasADi expressions.
+        :param quad_name: Name of the quadrotor
+        :param nominal: CasADi symbolic nominal model of the quadrotor: f(self.x, self.u) = x_dot, dimensions 13x1.
+        :param mhe: Boolean variable. True if model is for MHE, and False if model is for MPC. 
+
+        """
+        dynamics_ = nominal
+        x_dot_ = self.x_dot
+        x_ = self.x
+        u_ = self.u
+        w_ = self.w
+        param_ = []
+
+        acados_model = AcadosModel()
+        acados_model.f_expl_expr = dynamics_
+        acados_model.f_impl_expr = x_dot_ - dynamics_
+        acados_model.x = x_
+        acados_model.xdot = x_dot_
+        acados_model.u = w_
+        acados_model.p = cs.vertcat(u_, param_)
+        acados_model.name = "mhe"
+    
+        return acados_model, dynamics_
+    
     def create_mhe_solver(self, model, q_cost, q0_factor, r_cost):
         """
         Creates OCP objects to formulate the MPC optimization
@@ -153,8 +216,6 @@ class QuadOptimizerMHE(QuadOptimizer):
         """
         # Set Arrival Cost as a factor of q_cost
         q0_cost = q_cost * q0_factor
-        if self.n_param > 0:
-            q_cost = q_cost[:-self.n_param]
 
         # Number of states and Inputs of the model
         # make acceleration as error
@@ -211,13 +272,7 @@ class QuadOptimizerMHE(QuadOptimizer):
         
         # Initialize parameters
         ocp_mhe.parameter_values = np.zeros((n_param, ))
-
-        # Quadrotor Mass Estimation limits
-        if isinstance(self.k_m, cs.MX):
-            ocp_mhe.constraints.lbx_0 = self.param_lbx
-            ocp_mhe.constraints.ubx_0 = self.param_ubx
-            ocp_mhe.constraints.idxbx_0 = np.array([self.state_dim])
-        
+       
         # # Quaternion normalization Constraint
         # eps = 1e-6
         # ocp_mhe.constraints.nh = 1
@@ -237,80 +292,70 @@ class QuadOptimizerMHE(QuadOptimizer):
         
         return ocp_mhe, nyx, nx, nu
 
-def main():
-    rospy.init_node("acados_compiler_mhe", anonymous=True) 
-    ns = rospy.get_namespace()
+    def set_history_trajectory(self, y_history, u_history):
+        """
+        Sets the history of trajectory and pre-computes the cost equations for each point in the reference sequence.
+        Computes the state uncertainty of the reference states with the trained GP model to set state constraints.
+        :param y_history: Nx13-dimensional list of history of state measurements. It is passed in the
+        form of a 4-length list, where the first element is a Nx3 numpy array referring to the position measurements, the
+        second is a Nx4 array referring to the quaternion, two more Nx3 arrays for the velocity and body rate measurements.
+        """
+        # Initialise arrival cost
+        if self.x0_bar is None:
+            p = y_history[0, :3]
+            q = [1, 0, 0, 0]
+            v = [0, 0, 0]
+            r = [0, 0, 0]
+            if self.mhe_type == "k":
+                a = [0, 0, 9.81]
+                self.x0_bar = np.append(p, np.array(q + v + r + a))
+            elif self.mhe_type == "d":
+                self.x0_bar = np.append(p, np.array(q + v + r))           
 
-    compile = rospy.get_param("/compile", default=True)
+        # Initialise reference for mhe
+        # First reference is set separately to set the arrival cost
+        if self.mhe_type == "k":
+            # Set history of state measurements
+            yref_0 = np.array(cs.vertcat(y_history[0, :], np.zeros((self.state_dim)), self.x0_bar))
+            self.acados_mhe_solver.set(0, "yref", yref_0)
+            for j in range(1, self.N):
+                yref = np.array(cs.vertcat(y_history[j, :], np.zeros((self.state_dim))))
+                self.acados_mhe_solver.set(j, "yref", yref)   
+        elif self.mhe_type == "d":
+            # Set motor thrusts
+            for j in range(self.N):
+                u = np.array(cs.vertcat(u_history[j, :]))
+                self.acados_mhe_solver.set(j, 'p', u)
+            # Set history of state measurements
+            yref_0 = np.array(cs.vertcat(y_history[0, :6], np.zeros((self.state_dim)), self.x0_bar))
+            self.acados_mhe_solver.set(0, "yref", yref_0)
+            for j in range(1, self.N):
+                yref = np.array(cs.vertcat(y_history[j, :6], np.zeros((self.state_dim))))
+                self.acados_mhe_solver.set(j, "yref", yref)
+
+    def run_mhe_optimization(self):
+        """
+        Optimizes state measurements and model dynamics to estimate the system states, that minimizes
+        the quadratic cost function and respects the constraints of the system
+        """
+        # Solve MHE
+        if self.x0_bar is not None:
+            status = self.acados_mhe_solver.solve()
+            # Get estimated state
+            self.x_est = self.acados_mhe_solver.get(self.N, "x") 
+            self.x0_bar = self.acados_mhe_solver.get(1, "x")
+
+        self.qp_iter = self.acados_mhe_solver.get_stats('qp_iter')
+        self.sqp_iter = self.acados_mhe_solver.get_stats('sqp_iter')
+        self.opt_time = self.acados_mhe_solver.get_stats('time_tot')
+
+        return status
+
+    def get_state_est(self):
+        return self.x_est[:self.state_dim]
+
+    def get_param_est(self):
+        return self.x_est[self.state_dim:]
     
-    # Load Quad Instance
-    quad_name = rospy.get_param(ns + 'quad_name', default=None)
-    assert quad_name != None
-    quad = custom_quad_param_loader(quad_name)
-    rospy.set_param(ns + quad_name + '/hover_thrust', quad.hover_thrust)
-   
-    if compile:
-        rospy.loginfo("Compiling MHE Acados model...")
-        # Load MHE parameters
-        n_mhe = rospy.get_param(ns + 'n_mhe', default=50)
-        t_mhe = rospy.get_param(ns + 't_mhe', default=0.5)
-        mhe_type = rospy.get_param(ns + 'mhe_type', default="kinematic")
-        with_gp = rospy.get_param(ns + 'with_gp', default=False)
-        change_mass = rospy.get_param(ns + 'change_mass', default=0)
-        y_features = rospy.get_param(ns + 'y_features', default=[7, 8, 9])
-
-        # System Noise
-        w_p = np.ones((1,3)) * rospy.get_param(ns + 'w_p', default=0.004)
-        w_q = np.ones((1,3)) * rospy.get_param(ns + 'w_q', default=0.01)
-        w_v = np.ones((1,3)) * rospy.get_param(ns + 'w_v', default=0.005)
-        w_r = np.ones((1,3)) * rospy.get_param(ns + 'w_r', default=0.5)
-        w_a = np.ones((1,3)) * rospy.get_param(ns + 'w_a', default=0.05)
-
-        w_d = np.ones((1,3)) * rospy.get_param(ns + 'w_d', default=0.00001)
-        w_m = np.ones((1,3)) * rospy.get_param(ns + 'w_m', default=0.0001)
-
-        # Measurement Noise
-        v_p = np.ones((1,3)) * rospy.get_param(ns + 'v_p', default=0.002)
-        v_r = np.ones((1,3)) * rospy.get_param(ns + 'v_r', default=1e-6)
-        v_a = np.ones((1,3)) * rospy.get_param(ns + 'v_a', default=1e-5)
-        v_d = np.ones((1,3)) * rospy.get_param(ns + 'v_d', default=0.0001)
-
-        # System Weights
-        if mhe_type == "kinematic":
-            q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_a)))
-        elif mhe_type == "dynamic" and not with_gp:
-            if change_mass != 0:
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_m)))
-            else:
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r)))
-        elif mhe_type == "dynamic" and with_gp:
-            if change_mass != 0:
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d, w_m)))
-            else:
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d)))
-        q0_factor = 1 # arrival cost factor
-        if mhe_type == "kinematic":
-            r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_a))**2) 
-        elif mhe_type == "dynamic" and with_gp:
-            r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_d))**2) 
-        elif mhe_type == "dynamic" and not with_gp:
-            r_mhe = 1/np.squeeze(np.hstack((v_p, v_r))**2)
-
-        # Compile Acados Model
-        quad_opt = QuadOptimizerMHE(quad, t_mhe=t_mhe, n_mhe=n_mhe, mhe_type=mhe_type,
-                                    q_mhe=q_mhe, q0_factor=q0_factor, r_mhe=r_mhe,
-                                    model_name=quad_name, 
-                                    mhe_with_gp=with_gp, y_features=y_features,
-                                    change_mass=change_mass)
-        rospy.loginfo("MHE Acados model Compiled Successfully...")
-        
-    return quad_opt
-
-def init_compile():
-    quad_name = "clark"
-    quad = custom_quad_param_loader(quad_name)
-    quad_opt = QuadOptimizerMHE(quad, mhe_type='dynamic', mhe_with_gp=False)
-
-if __name__ == "__main__":
-    main()
-    # init_compile()
+    def get_opt_dt(self):
+        return self.opt_dt[0]
