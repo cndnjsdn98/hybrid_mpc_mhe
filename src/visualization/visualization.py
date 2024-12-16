@@ -231,7 +231,8 @@ def trajectory_tracking_results(img_save_dir, t_ref, t_executed, x_ref, x_execut
 
 
 def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y_measured, 
-                             mhe_error, t_acc_est=None, accel_est=None, error_pred=None, file_type='png',
+                             t_meas_noisy, y_measured_noisy, mhe_error, t_acc_est=None, accel_est=None, 
+                             error_pred=None, file_type='png',
                              show_error=False, show_dvdt=False, a_thrust=None, a_meas=None):
     plt.switch_backend('Agg')
     SMALL_SIZE = 14
@@ -254,7 +255,7 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
     for i in range(3):
         ax[i].plot(t_est, x_est[:n_test, i], label="estimated", zorder=3)
         ax[i].plot(t_act, x_act[:n_tact, i], label="actual", zorder=2)
-        ax[i].plot(t_meas, y_measured[:n_tmeas, i], label="measurement", zorder=1)
+        ax[i].plot(t_meas_noisy, y_measured_noisy[:n_tmeas, i], label="measurement", zorder=1, alpha=0.5)
         tit = 'P_' + labels[i]
         ax[i].set_ylabel(tit)
         ax[i].legend()
@@ -327,8 +328,9 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
     fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
     for i in range(3):
         ax[i].plot(t_est, x_est[:n_test, i+10], label="estimated", zorder=3)
-        ax[i].plot(t_act, x_act[:n_tact, i+10], label="actual", zorder=1)
-        ax[i].plot(t_meas, y_measured[:, i+3], label="measurement", zorder=2)
+        ax[i].plot(t_act, x_act[:n_tact, i+10], label="actual", zorder=2)
+        # ax[i].plot(t_meas, y_measured[:, i+3], label="measurement", zorder=2)
+        ax[i].plot(t_meas_noisy, y_measured_noisy[:n_tmeas, i+3], label="measurement", zorder=1, alpha=0.5)
         tit = 'w_' + labels[i] + ' estimation error'
         ax[i].set_ylabel(tit)
         ax[i].legend()
@@ -430,8 +432,10 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
         n_taccest = len(t_acc_est)
         fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
         for i in range(3):
-            p1, = ax[i].plot(t_meas, y_measured[:n_tmeas, i+6], label='measurement', color='C1', zorder=1)
-            p2, = ax[i].plot(t_acc_est, accel_est[:n_taccest, i], label='mhe est', color='C0', zorder=2)
+            p1, = ax[i].plot(t_meas, y_measured[:n_tmeas, i+6], label='actual', color='C1', zorder=2)
+            p2, = ax[i].plot(t_acc_est, accel_est[:n_taccest, i], label='mhe est', color='C0', zorder=3)
+            p3, = ax[i].plot(t_meas_noisy, y_measured_noisy[:n_tmeas, i+6], label="measurement", zorder=1, alpha=0.5)
+
             tit = 'a_' + labels[i] + ' measurement'
             # lns = [p2, p1]
             ax[i].legend()
@@ -448,7 +452,7 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
     if a_meas is not None:
         fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
         for i in range(3):
-            p1, = ax[i].plot(t_meas, a_meas[:n_tmeas, i], label='measurement', color='C1', zorder=1)
+            p1, = ax[i].plot(t_meas, a_meas[:n_tmeas, i], label='actual', color='C1', zorder=1)
             p2, = ax[i].plot(t_meas, a_thrust[:n_tmeas, i], label='thrust command', color='C0', zorder=2)
             tit = 'a_' + labels[i] + ' measurement'
             # lns = [p2, p1]

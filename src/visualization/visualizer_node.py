@@ -16,10 +16,10 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from quadrotor_msgs.msg import ControlCommand
-from hybrid_mpc_mhe.msg import ReferenceTrajectory
+from hybrid_mpc_mhe.msg import ReferenceTrajectory, QuadSensor
 
-from src.quad_opt.quad import Quadrotor
-from src.utils.utils import v_dot_q, quaternion_inverse, safe_mkdir_recursive, vw_to_vb, rmse
+from src.quad.quad import Quadrotor
+from src.utils.utils import v_dot_q, quaternion_inverse, safe_mkdir_recursive, vw_to_vb, rmse, q_rmse
 from src.visualization.visualization import trajectory_tracking_results, state_estimation_results
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 
@@ -45,11 +45,18 @@ class VisualizerWrapper:
 
         self.t_mhe = rospy.get_param("/mhe/t_mhe", default=0.5)
         self.n_mhe = rospy.get_param("/mhe/n_mhe", default=50)
-        self.mhe_with_gp = rospy.get_param("/mhe/with_gp", default=False)
-        self.mhe_type = rospy.get_param("/mhe/mhe_type", default=None)
-        # Override since K-MHE never uses GP
-        if self.mhe_type == "kinematic":
-            self.mhe_with_gp = False
+        mhe_type = rospy.get_param("/mhe/mhe_type", default=None)
+        if mhe_type == "kinematic":
+            self.mhe_type = "k"
+        elif mhe_type == "dynamic":
+            self.mhe_type = "d"
+        self.mhe_use_nn = rospy.get_param("/mhe/use_nn", default=False)
+        self.mhe_model_name = rospy.get_param("/mhe/model_name", default=None)
+        self.mhe_model_type = rospy.get_param("/mhe/model_type", default=None)
+        self.mhe_correction_mode = rospy.get_param("/mhe/correction_mode", default=None)
+        # Override since K-MHE never uses NN
+        if self.mhe_type == "k":
+            self.mhe_use_nn = False
 
         self.results_dir = DirConfig.FLIGHT_DATA_DIR
 
@@ -70,8 +77,11 @@ class VisualizerWrapper:
             'env': self.env,
             't_mhe': self.t_mhe,
             'n_mhe': self.n_mhe,
-            'with_gp': self.mhe_with_gp,
-            'mhe_type': self.mhe_type
+            'mhe_type': self.mhe_type,
+            'use_nn': self.mhe_use_nn,
+            'model_type': self.mhe_model_type,
+            'model_name': self.mhe_model_name,
+            'correction_mode': self.mhe_correction_mode,
         }
         # Create MPC Directory
         if self.mpc_use_nn:
@@ -88,10 +98,15 @@ class VisualizerWrapper:
         # Create MHE Directory if MHE Type is given
         # else check every second
         if self.mhe_type is not None:
-            self.mhe_dataset_name = "%s%s_%smhe_%s"%("gp_" if self.mhe_with_gp else "",
-                                                     self.env, 
-                                                     "k" if self.mhe_type=="kinematic" else "d", 
-                                                     self.quad_name)
+            if self.mhe_use_nn:
+                use_nn_str = "_%s_%s"%(self.mhe_model_type,
+                                        self.mhe_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mhe_dataset_name = "%s_%smhe_%s%s"%(self.env, 
+                                                   self.mhe_type, 
+                                                   self.quad_name,
+                                                   use_nn_str)
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
             safe_mkdir_recursive(self.mhe_dir)
 
@@ -99,7 +114,7 @@ class VisualizerWrapper:
         self.timer_use_gt = rospy.Timer(rospy.Duration(1), self.check_use_gt)
         self.timer_mpc_use_nn = rospy.Timer(rospy.Duration(1), self.check_mpc_use_nn)
         self.timer_mhe_type = rospy.Timer(rospy.Duration(1), self.check_mhe_type)
-        self.timer_mhe_with_gp = rospy.Timer(rospy.Duration(1), self.check_mhe_with_gp)
+        self.timer_mhe_use_nn = rospy.Timer(rospy.Duration(1), self.check_mhe_use_nn)
 
         self.record = False
 
@@ -113,17 +128,17 @@ class VisualizerWrapper:
         # Initialize vectors to store Tracking and Estimation Results
         self.t_act = np.zeros((0, 1))
         self.t_imu = np.zeros((0, 1))
+        self.t_sensor_measurement = np.zeros((0, 1))
         self.t_est = np.zeros((0, 1))
         self.t_acc_est = np.zeros((0, 1))
         self.x_act = np.zeros((0, 13))
         self.x_est = np.zeros((0, 13))
         self.y = np.zeros((0, 9))
+        self.y_noisy = np.zeros((0, 9))
         self.accel_est = np.zeros((0, 3))
         self.motor_thrusts = np.zeros((0, 4))
         self.w_control = np.zeros((0, 3))
         self.collective_thrusts = np.zeros((0, 1))
-        self.mpc_gpy_pred = np.zeros((0, 3))
-        self.mhe_gpy_pred = np.zeros((0, 3))
 
         # System States
         self.p_act = None
@@ -136,13 +151,14 @@ class VisualizerWrapper:
 
         # Subscriber topic names
         odom_topic = rospy.get_param("/odom_topic", default = "/" + self.quad_name + "/ground_truth/odometry")
-        imu_topic = rospy.get_param("/mhe/imu_topic", default = "/mavros/imu/data_raw") 
+        imu_topic = rospy.get_param("/imu_topic", default = "/hummingbird/ground_truth/imu") 
         state_est_topic = rospy.get_param("/state_est_topic", default = "/" + self.quad_name + "/state_est")
-        acceleration_est_topic = rospy.get_param("/mhe/acceleration_est_topic", default = "/" + self.quad_name + "/acceleration_est")
+        acceleration_est_topic = rospy.get_param("/acceleration_est_topic", default = "/" + self.quad_name + "/acceleration_est")
         motor_thrust_topic = rospy.get_param("/motor_thrust_topic", default = "/" + self.quad_name + "/motor_thrust")
         ref_topic = rospy.get_param("/ref_topic", default = "/reference")
         control_topic = rospy.get_param("/control_topic", default = "/" + self.quad_name + "/autopilot/control_command_input")
         record_topic = rospy.get_param("/record_topic", default = "/" + self.quad_name + "/record")
+        sensor_measurement_topic = rospy.get_param("/sensor_measurement_topic", default="/" + self.quad_name + "/sensor_measurement") 
 
         # Subscribers
         self.imu_sub = rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=1, tcp_nodelay=False)
@@ -156,11 +172,11 @@ class VisualizerWrapper:
         elif self.env == "arena":
             self.control_sub = rospy.Subscriber(control_topic, AttitudeTarget, self.control_callback, queue_size=1, tcp_nodelay=False)
         self.record_sub = rospy.Subscriber(record_topic, Bool, self.record_callback, queue_size=1, tcp_nodelay=False)
-
+        self.sensor_measurement_sub = rospy.Subscriber(sensor_measurement_topic, QuadSensor, self.sensor_measurement_callback, queue_size=1, tcp_nodelay=True)
         rospy.loginfo("Visualizer on standby listening...")
         rospy.loginfo("MPC w/%s NN"% ("OUT" if not self.mpc_use_nn else ""))
         if self.mhe_type is not None:
-            rospy.loginfo("%s MHE w/%s GP"%(self.mhe_type, "OUT" if not self.mhe_with_gp else ""))
+            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s"%self.mhe_model_type))
 
 
     def save_recording_data(self):
@@ -247,7 +263,6 @@ class VisualizerWrapper:
             "input_in": u_in,
             "w_control": self.w_control,
             "state_in_Body": state_in_B, 
-            "error_pred": self.mpc_gpy_pred,
         }
         self.mpc_meta['rmse'] = mpc_tracking_error
         v_max = np.max(np.linalg.norm(state_in[:, 7:10], axis=1))
@@ -289,7 +304,15 @@ class VisualizerWrapper:
                 self.t_imu = np.append(self.t_imu, self.t_imu[-1])
             self.y = self.y[:self.seq_len * 2]
             self.t_imu = self.t_imu[:self.seq_len * 2]
-            
+            while len(self.y_noisy) < self.seq_len * 2:
+                self.y_noisy = np.append(self.y_noisy, self.y_noisy[-1][np.newaxis], axis=0)
+            self.t_sensor_measurement = self.t_sensor_measurement - self.t_sensor_measurement[0]
+            while len(self.t_sensor_measurement) < self.seq_len * 2:
+                self.t_sensor_measurement = np.append(self.t_sensor_measurement, 
+                                                      self.t_sensor_measurement[-1])
+            self.t_sensor_measurement = self.t_sensor_measurement[:self.seq_len * 2]
+            self.y_noisy = self.y_noisy[:self.seq_len * 2]
+                
             mhe_error = np.zeros_like(self.x_est)
             a_meas_traj = np.zeros((len(self.x_est), 3))
             a_est_b_traj = np.zeros((len(self.x_est), 3))
@@ -320,7 +343,7 @@ class VisualizerWrapper:
                 a_error = np.concatenate((np.zeros((1, 7)), a_meas - a_est_b, np.zeros((1, 3))), axis=None)
                 mhe_error[i] = a_error
             mhe_p_error = rmse(self.t_act, self.x_act[:, :3], self.t_est, self.x_est[:, :3])
-            mhe_q_error = rmse(self.t_act, self.x_act[:, 3:7], self.t_est, self.x_est[:, 3:7])
+            mhe_q_error = q_rmse(self.t_act, self.x_act[:, 3:7], self.t_est, self.x_est[:, 3:7])
             mhe_v_error = rmse(self.t_act, self.x_act[:, 7:10], self.t_est, self.x_est[:, 7:10])
             # Organize arrays to dictionary
             mhe_dict = {
@@ -329,7 +352,6 @@ class VisualizerWrapper:
                 "x_act": self.x_act,
                 "sensor_meas": self.y,
                 "motor_thrusts": self.motor_thrusts,
-                "error_pred": self.mhe_gpy_pred,
                 "error": mhe_error,
                 "a_est_b": a_est_b_traj,
                 "accel_est": self.accel_est,
@@ -351,16 +373,20 @@ class VisualizerWrapper:
             self.x_est = self.x_est[:self.seq_len * 2]
             self.t_imu = self.t_imu[:self.seq_len * 2]
             self.y = self.y[:self.seq_len * 2]
-            
+            self.t_sensor_measurement = self.t_sensor_measurement[:self.seq_len * 2]
+            self.y_noisy = self.y_noisy[:self.seq_len * 2]
+            if self.mhe_type == "k":
+                self.t_acc_est = self.t_acc_est[:self.seq_len * 2]
+                self.accel_est = self.accel_est[:self.seq_len * 2]
             try:
-                if len(self.t_acc_est) > 0:
-                    self.t_acc_est = self.t_acc_est[:self.seq_len * 2]
-                    self.accel_est = self.accel_est[:self.seq_len * 2]
+                if self.mhe_type == "k":
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
-                                            mhe_error, t_acc_est=self.t_acc_est, accel_est=self.accel_est, file_type='png')
+                                             self.t_sensor_measurement, self.y_noisy, mhe_error, t_acc_est=self.t_acc_est, 
+                                             accel_est=self.accel_est, file_type='png')
                 else:
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
-                                            mhe_error, a_thrust=a_thrust_traj, a_meas=a_meas_traj, file_type='png', )
+                                             self.t_sensor_measurement, self.y_noisy, mhe_error, a_thrust=a_thrust_traj, 
+                                             a_meas=a_meas_traj, file_type='png')
             except Exception as e:
                 rospy.logerr(f"An error occurred while plotting state estimation results: {e}")    
         else:
@@ -376,17 +402,18 @@ class VisualizerWrapper:
         # Vectors to store Tracking and Estimation Results
         self.t_act = np.zeros((0, 1))
         self.t_imu = np.zeros((0, 1))
+        self.t_sensor_measurement = np.zeros((0, 1))
         self.t_est = np.zeros((0, 1))
         self.t_acc_est = np.zeros((0, 1))
         self.x_act = np.zeros((0, 13))
         self.x_est = np.zeros((0, 13))
         self.y = np.zeros((0, 9))
+        self.y_noisy = np.zeros((0, 9))
         self.accel_est = np.zeros((0, 3))
         self.motor_thrusts = np.zeros((0, 4))
         self.w_control = np.zeros((0, 3))
         self.collective_thrusts = np.zeros((0, 1))
-        self.mhe_gpy_pred = np.zeros((0, 3))
-        self.mpc_gpy_pred = np.zeros((0, 3))
+
         # System States
         self.p_act = None
         self.q_act = None
@@ -513,7 +540,16 @@ class VisualizerWrapper:
             # Run thread for saving the recorded data
             _save_record_thread = threading.Thread(target=self.save_recording_data(), args=(), daemon=True)
             _save_record_thread.start()
-
+    
+    def sensor_measurement_callback(self, msg):
+        if not self.record:
+            return
+        
+        y_noisy = [msg.position.x, msg.position.y, msg.position.z,
+                   msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z,
+                   msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z]
+        self.y_noisy = np.append(self.y_noisy, np.array(y_noisy)[np.newaxis, :], axis=0)
+        self.t_sensor_measurement = np.append(self.t_sensor_measurement, msg.header.stamp.to_time())
 
     def check_use_gt(self, event):
         use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=None)
@@ -563,33 +599,55 @@ class VisualizerWrapper:
             safe_mkdir_recursive(self.mpc_dir)
 
     def check_mhe_type(self, event):
-        mhe_type = rospy.get_param("gp_mhe/mhe_type", default=None)
+        mhe_type = rospy.get_param("/mhe/mhe_type", default=None)
+        if mhe_type.lower() == "kinematic":
+            mhe_type = "k"
+        elif mhe_type.lower() == "dynamic":
+            mhe_type = "d"
         if mhe_type is not None and self.mhe_type != mhe_type:
             self.mhe_type = mhe_type
-            rospy.loginfo("%s MHE"%self.mhe_type)
-            self.mhe_dataset_name = "%s%s_%smhe_%s"%("gp_" if self.mhe_with_gp else "",
-                                                     self.env, 
-                                                     "k" if self.mhe_type=="kinematic" else "d", 
-                                                     self.quad_name)
-            self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
+            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s"%self.mhe_model_type))
             self.mhe_meta['mhe_type'] = self.mhe_type
+            if self.mhe_use_nn:
+                use_nn_str = "_%s_%s"%(self.mhe_model_type,
+                                        self.mhe_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mhe_dataset_name = "%s_%smhe_%s%s"%(self.env, 
+                                                   self.mhe_type, 
+                                                   self.quad_name,
+                                                   use_nn_str)
+            self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
             # Create Directory
             safe_mkdir_recursive(self.mhe_dir)
 
-    def check_mhe_with_gp(self, event):
-        if self.mhe_type == "kinematic":
+    def check_mhe_use_nn(self, event):
+        if self.mhe_type == "k":
             return
         
-        mhe_with_gp = rospy.get_param("gp_mhe/with_gp", default=None)
-        if mhe_with_gp is not None and self.mhe_with_gp != mhe_with_gp:
-            self.mhe_with_gp = mhe_with_gp
-            rospy.loginfo("MHE w/%s GP"%"OUT" if not mhe_with_gp else "")
-            self.mhe_dataset_name = "%s%s_%smhe_%s"%("gp_" if self.mhe_with_gp else "",
-                                                     self.env, 
-                                                     "k" if self.mhe_type=="kinematic" else "d", 
-                                                     self.quad_name)
+        mhe_use_nn = rospy.get_param("/mhe/use_nn", default=None)
+        if mhe_use_nn is not None and self.mhe_use_nn != mhe_use_nn:
+            self.mhe_use_nn = mhe_use_nn
+            self.mhe_model_name = rospy.get_param("/mhe/model_name", default=None)
+            self.mhe_model_type = rospy.get_param("/mhe/model_type", default=None)
+            self.mhe_correction_mode = rospy.get_param("/mhe/correction_mode", default=None)
+            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s"%self.mhe_model_type))
+
+            self.mhe_meta['use_nn'] = self.mhe_use_nn
+            self.mhe_meta['model_type'] = self.mhe_model_type
+            self.mhe_meta['model_name'] = self.mhe_model_name
+            self.mhe_meta['correction_mode'] = self.mhe_correction_mode
+            if self.mhe_use_nn:
+                use_nn_str = "_%s_%s"%(self.mhe_model_type,
+                                        self.mhe_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mhe_dataset_name = "%s_%smhe_%s%s"%(self.env, 
+                                                   self.mhe_type, 
+                                                   self.quad_name,
+                                                   use_nn_str)
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
-            self.mhe_meta['with_gp'] = self.mhe_with_gp
+
             # Create Directory
             safe_mkdir_recursive(self.mhe_dir)
 

@@ -305,3 +305,40 @@ def rmse(t_1, x_1, t_2, x_2, n_interp_samples=4000):
         err[:, dim] = x1_sample - x2_sample
 
     return np.mean(np.sqrt(np.sum(err ** 2, axis=1)))
+
+def q_rmse(t_1, q_1, t_2, q_2, n_interp_samples=4000):
+    if np.all(t_1 == t_2):
+        return q_dot_q(q_1, q_2)
+
+    assert q_1.shape[1] == q_2.shape[1]
+
+    if t_1[0] != 0:
+        t_1 -= t_1[0]
+
+    if t_2[0] != 0:
+        t_2 -= t_2[0]
+
+    # Find duplicates
+    t_1, idx_1 = np.unique(t_1, return_index=True)
+    q_1 = q_1[idx_1, :]
+    t_2, idx_2 = np.unique(t_2, return_index=True)
+    q_2 = q_2[idx_2, :]
+
+    t_min = max(t_1[0], t_2[0])
+    t_max = min(t_1[-1], t_2[-1])
+
+    t_interp = np.linspace(t_min, t_max, n_interp_samples)
+    err = np.zeros((n_interp_samples, q_1.shape[1]))
+    q1_sample = np.zeros((n_interp_samples, q_1.shape[1]))
+    q2_sample = np.zeros((n_interp_samples, q_1.shape[1]))
+    for dim in range(q_1.shape[1]):
+        q1_interp = interp1d(np.squeeze(t_1), np.squeeze(q_1[:, dim]), kind='cubic', bounds_error=False, fill_value="extrapolate")
+        q2_interp = interp1d(np.squeeze(t_2), np.squeeze(q_2[:, dim]), kind='cubic', bounds_error=False, fill_value="extrapolate")
+
+        q1_sample[:, dim] = q1_interp(t_interp)
+        q2_sample[:, dim] = q2_interp(t_interp)
+
+    for i in range(n_interp_samples):
+        err[i, :] = q_dot_q(q1_sample[i, :], q2_sample[i, :])
+
+    return np.mean(np.sqrt(np.sum(err ** 2, axis=1)))
