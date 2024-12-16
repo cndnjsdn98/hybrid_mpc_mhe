@@ -21,9 +21,9 @@ import numpy as np
 import l4casadi as l4c
 
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
-from src.utils.utils import v_dot_q, skew_symmetric
+from src.utils.utils import v_dot_q
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
-from src.quad_opt.quad import Quadrotor
+from src.quad.quad import Quadrotor
 
 class QuadOptimizerMPC:
     def __init__(self, quad:Quadrotor, t_mpc=1, n_mpc=10, 

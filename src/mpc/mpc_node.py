@@ -4,10 +4,9 @@ import rospy
 import threading
 import numpy as np
 
-from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 from src.utils.utils import v_dot_q, quaternion_state_mse, features_to_idx, world_to_body_velocity_mapping
-from src.quad_opt.quad import Quadrotor
-from src.quad_opt.quad_optimizer_mpc import QuadOptimizerMPC
+from src.quad.quad import Quadrotor
+from src.mpc.quad_optimizer_mpc import QuadOptimizerMPC
 from src.neural_ode.NeuralODE import load_neural_ode
 from src.gp.GPyModelWrapper import GPyModelWrapper
 

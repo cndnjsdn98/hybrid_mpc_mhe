@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Quad Name -->
+    <arg name="quad_name" default="hummingbird"/>
+    <!-- "gazebo" or "arena" to indicate the environment-->
+    <arg name="env" default="gazebo"/>
+
+    <!-- MPC Parameters -->
+    <arg name="t_mpc" default="1"/>
+    <arg name="n_mpc" default="10"/>
+    <!-- Model parameters are loaded via the (quad_name)_mpc.yaml file -->
+    <arg name="mpc_use_nn" default="False"/>
+    <!-- Use Ground truth Odometry instead of State Estimation -->
+    <arg name="use_groundtruth" default="True"/>
+
+    <!-- MHE Parameters -->
+    <arg name="t_mhe" default="0.5"/>
+    <arg name="n_mhe" default="50"/>
+    <arg name="mhe_type" default="kinematic"/>
+    <!-- Model parameters are loaded via the (quad_name)_dmhe.yaml file -->
+    <arg name="mhe_use_nn" default="False"/>
+
+    <!-- Start Recording node to record MPC and MHE -->
+    <arg name="record" default="False"/>
+
+    <param name="environment" value="$(arg env)"/>
+    <param name="quad_name" value="$(arg quad_name)"/>
+
+    <node name="mpc" pkg="hybrid_mpc_mhe" type="mpc_node.py" output="screen">
+        <rosparam file="$(find hybrid_mpc_mhe)/quads/$(arg quad_name)/$(arg quad_name)_mpc.yaml"/>
+        <param name="use_groundtruth" value="$(arg use_groundtruth)"/>
+        <param name="t_mpc" value="$(arg t_mpc)"/>
+        <param name="n_mpc" value="$(arg n_mpc)"/>
+        <param name="use_nn" value="$(arg mpc_use_nn)"/>
+    </node>
+
+    <group if="$(eval arg('mhe_type')=='kinematic')">
+        <node name="mhe" pkg="hybrid_mpc_mhe" type="mhe_node.py" output="screen">
+            <rosparam file="$(find hybrid_mpc_mhe)/quads/$(arg quad_name)/$(arg quad_name)_kmhe.yaml"/>
+            <param name="t_mhe" value="$(arg t_mhe)"/>
+            <param name="n_mhe" value="$(arg n_mhe)"/>
+            <param name="use_nn" value="$(arg mhe_use_nn)"/>
+            <param name="mhe_type" value="kinematic"/>
+        </node>
+    </group>
+    <group if="$(eval arg('mhe_type')=='dynamic')">
+        <node name="mhe" pkg="hybrid_mpc_mhe" type="mhe_node.py" output="screen">
+            <rosparam file="$(find hybrid_mpc_mhe)/quads/$(arg quad_name)/$(arg quad_name)_dmhe.yaml"/>
+            <param name="t_mhe" value="$(arg t_mhe)"/>
+            <param name="n_mhe" value="$(arg n_mhe)"/>
+            <param name="use_nn" value="$(arg mhe_use_nn)"/>
+            <param name="mhe_type" value="dynamic"/>
+        </node>
+    </group>
+
+    <group if="$(eval arg('record'))">
+        <node name="visualizer_node" pkg="hybrid_mpc_mhe" type="visualizer_node.py" output="screen"/>
+    </group>
+
+</launch>
