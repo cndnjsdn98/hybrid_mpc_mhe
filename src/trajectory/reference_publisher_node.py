@@ -14,7 +14,7 @@ this program. If not, see <http://www.gnu.org/licenses/>.
 
 from std_msgs.msg import Bool
 from hybrid_mpc_mhe.msg import ReferenceTrajectory
-from src.quad_opt.quad import Quadrotor
+from src.quad.quad import Quadrotor
 from src.trajectory.trajectories import circle_trajectory, random_trajectory, lemniscate_trajectory, hover_trajectory
 import numpy as np
 import rospy
@@ -29,8 +29,8 @@ class ReferenceGenerator:
         rospy.init_node("reference_generator")
 
         plot = rospy.get_param('~plot', default=True)
-
-        quad_name = rospy.get_param('/quad_name', default=None)
+        env = rospy.get_param('~environment', default='gazebo')
+        quad_name = rospy.get_param('~quad_name', default=None)
         assert quad_name != None
         quad = Quadrotor(quad_name)
 
@@ -76,9 +76,6 @@ class ReferenceGenerator:
         # Calculate total number of trajectories
         n_trajectories = n_seeds * len(v_list)
         curr_trajectory_ind = 0
-
-        # Environment
-        env = rospy.get_param('/environment', default='gazebo')
 
         rate = rospy.Rate(0.2)
         while not rospy.is_shutdown():

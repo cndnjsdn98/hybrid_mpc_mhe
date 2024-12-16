@@ -33,7 +33,7 @@ v_r: 0.03
 v_a: 0.3
 v_d: 0.0001
 
-# GP Model ------------------
-x_features: [6, 7, 8]
-y_features: [7, 8, 9]
+# NN Model ------------------
+x_features: "a"
+y_features: "v"
 gp_model_name: "a_hummingbird_mhe_-1-20"

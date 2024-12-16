@@ -1,10 +1,10 @@
 control_freq_factor: 5
 
 # MPC Costs
-q_p: 50
-q_q: 5
-q_v: 1
-q_r: 1
+q_p: 0.5
+q_q: 0.1
+q_v: 0.05
+q_r: 0.01
 qt_factor: 0
 r_mpc: 1
 

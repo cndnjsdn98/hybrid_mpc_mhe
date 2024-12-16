@@ -114,7 +114,7 @@ class NeuralODE(nn.Module):
                     j = int(i/valid_freq)
                     self.loss_hist[:, j] = np.array([i, loss.item(), loss_valid.item()])
                     print('Iter {:04d} | Train Loss {:.6f} | Valid Loss {:.6f}'.format(i, loss.item(), loss_valid.item()), flush=True)
-
+        print("Training Complete")
         if viz:
             pred_out = odeint(train_wrapper, train_init, train_times).to(device).detach().numpy()
             pred_valid = odeint(valid_wrapper, valid_init, valid_times).to(device).detach().numpy()
