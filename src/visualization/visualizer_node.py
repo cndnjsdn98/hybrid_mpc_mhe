@@ -8,6 +8,7 @@ from tqdm import tqdm
 import casadi as cs
 import pickle 
 import json
+import time
 
 from std_msgs.msg import Bool
 from mav_msgs.msg import Actuators
@@ -426,7 +427,7 @@ class VisualizerWrapper:
         rospy.loginfo("MPC: tracking RMSE: %.5f m. Max Vel: %.3f m/s" % (mpc_tracking_error, v_max))
         if mhe:
             rospy.loginfo("MHE: p Estimation RMSE: %.5f m" % (mhe_p_error))
-            rospy.loginfo("MHE: q Estimation RMSE: %.5f rad" % (mhe_q_error))
+            rospy.loginfo("MHE: q Estimation RMSE: %.5f deg" % (np.rad2deg(mhe_q_error)))
             rospy.loginfo("MHE: v Estimation RMSE: %.5f m/s" % (mhe_v_error))
     
     def imu_callback(self, msg):
@@ -449,6 +450,7 @@ class VisualizerWrapper:
         self.motor_thrusts = np.append(self.motor_thrusts, [motor_thrusts], axis=0)
     
     def odom_callback(self, msg):
+        # print("odom time: %.3f | act time: %.3f"%(msg.header.stamp.to_time(), time.time()))
         if not self.record:
             return
         
@@ -468,6 +470,7 @@ class VisualizerWrapper:
         self.t_act = np.append(self.t_act, msg.header.stamp.to_time())
 
     def state_est_callback(self, msg):
+        # print("state est time: %.3f | act time: %.3f"%(msg.header.stamp.to_time(), time.time()))
         if not self.record:
             return
         

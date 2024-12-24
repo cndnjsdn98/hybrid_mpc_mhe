@@ -308,8 +308,12 @@ def rmse(t_1, x_1, t_2, x_2, n_interp_samples=4000):
 
 def q_rmse(t_1, q_1, t_2, q_2, n_interp_samples=4000):
     if np.all(t_1 == t_2):
-        return q_dot_q(q_1, q_2)
-
+        err = np.zeros((len(t_1), 1))
+        for i in range(len(t_1)):
+            q_delta = q_dot_q(q_1[i, :], quaternion_inverse(q_2[i, :]))
+            err[i] = np.atan2(np.sum(q_delta[1:] ** 2), q_delta[0])
+        return np.mean(err)
+    
     assert q_1.shape[1] == q_2.shape[1]
 
     if t_1[0] != 0:
@@ -328,7 +332,7 @@ def q_rmse(t_1, q_1, t_2, q_2, n_interp_samples=4000):
     t_max = min(t_1[-1], t_2[-1])
 
     t_interp = np.linspace(t_min, t_max, n_interp_samples)
-    err = np.zeros((n_interp_samples, q_1.shape[1]))
+    err = np.zeros((n_interp_samples, 1))
     q1_sample = np.zeros((n_interp_samples, q_1.shape[1]))
     q2_sample = np.zeros((n_interp_samples, q_1.shape[1]))
     for dim in range(q_1.shape[1]):
@@ -339,6 +343,7 @@ def q_rmse(t_1, q_1, t_2, q_2, n_interp_samples=4000):
         q2_sample[:, dim] = q2_interp(t_interp)
 
     for i in range(n_interp_samples):
-        err[i, :] = q_dot_q(q1_sample[i, :], q2_sample[i, :])
-
-    return np.mean(np.sqrt(np.sum(err ** 2, axis=1)))
+        q_delta = q_dot_q(q1_sample[i, :], quaternion_inverse(q2_sample[i, :]))
+        err[i] = np.atan2(np.sum(q_delta[1:] ** 2), q_delta[0])
+ 
+    return np.mean(err)

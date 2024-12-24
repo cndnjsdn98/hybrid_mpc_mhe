@@ -1,17 +1,40 @@
 control_freq_factor: 5
 
 # MPC Costs
-q_p: 0.5
-q_q: 0.1
-q_v: 0.05
-q_r: 0.01
-qt_factor: 0
-r_mpc: 1
+cost/q_p: 30
+cost/q_q: 17
+cost/q_v: 15
+cost/q_r: 15
+cost/qt_factor: 0
+cost/r_mpc: 1
 
-# GP Model
-x_features: [7, 8, 9]
-y_features: [7, 8, 9]
-gp_model_name: "a_hummingbird_mpc_-1-20"
+# cost/q_p: 40
+# cost/q_q: 35
+# cost/q_v: 20
+# cost/q_r: 20
+# cost/qt_factor: 0
+# cost/r_mpc: 1
+
+# cost/q_p: 400
+# cost/q_q: 350
+# cost/q_v: 200
+# cost/q_r: 200
+# cost/qt_factor: 0
+# cost/r_mpc: 2
+
+# cost/q_p: 0.5
+# cost/q_q: 0.1
+# cost/q_v: 0.05
+# cost/q_r: 0.01
+# cost/qt_factor: 0
+# cost/r_mpc: 1
+
+# Data Driven Model
+nn/input_features: "v"
+nn/output_features: "v"
+nn/model_name: "a_hummingbird_mpc_-1-20"
+nn/model_type: "gp"
+nn/correction_mode: "online"
 
 # Landing options
 land_z: 0.1
@@ -19,5 +42,5 @@ land_dz: 0.1
 land_z_thr: 0.05
 
 # Approaching Init. Pos.
-init_thr: 0.1
-init_v: 0.5
+init_thr: 0.5
+init_v: 0.75

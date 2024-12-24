@@ -15,3 +15,16 @@ w_q: 0.0001
 w_v: 0.0001
 w_r: 0.05
 w_a: 0.1
+
+reducing weight smoothes signal but reduces responsiveness
+* more reliance on dynamics and less on sensor measurement
+increasing weight increases responsiveness but loses smoothness in signal
+* more reliance on sensor measurement and less on dynamics
+
+
+cost/w_p: 0.01
+cost/w_q: 0.0001
+cost/w_v: 0.01
+cost/w_r: 0.175
+cost/w_a: 0.3
+cost/w_d: 0.0001

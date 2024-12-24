@@ -23,6 +23,13 @@
     <!-- Start Recording node to record MPC and MHE -->
     <arg name="record" default="False"/>
 
+    <!-- Reference trajectory parameters -->
+    <arg name="n_seeds" default="1"/> <!-- How many random seeds to use to generate trajectories -->
+    <arg name="trajectory_speeds" default="[4.0]"/>
+    <arg name="traj" default=""/> <!-- one of: random, hover, loop, lemniscate -->
+    <arg name="plot" default="true"/>
+
+
     <param name="environment" value="$(arg env)"/>
     <param name="quad_name" value="$(arg quad_name)"/>
 
@@ -55,6 +62,18 @@
 
     <group if="$(eval arg('record'))">
         <node name="visualizer_node" pkg="hybrid_mpc_mhe" type="visualizer_node.py" output="screen"/>
+    </group>
+
+    <group if="$(eval arg('traj') != '')">
+        <node pkg="hybrid_mpc_mhe" type="reference_publisher_node.py" name="ref_gen" ns="ref_gen" output="screen">
+            <rosparam file="$(find hybrid_mpc_mhe)/config/$(arg env)/$(arg env)_traj_options.yaml"/>
+            <param name="environment" value="$(arg env)"/>
+            <param name="quad_name" value="$(arg quad_name)"/>
+            <param name="n_seeds" value="$(arg n_seeds)"/>
+            <param name="v_list" value="$(arg trajectory_speeds)"/>
+            <param name="trajectory" value="$(arg traj)"/>
+            <param name="plot" value="$(arg plot)"/>
+        </node>
     </group>
 
 </launch>

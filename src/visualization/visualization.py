@@ -301,6 +301,7 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
         ax[i].set_ylabel(tit)
         ax[i].legend()
         ax[i].grid()
+    # ax[0].set_ylim([0.85, 1.01])
     ax[0].set_title(r'quaternion')
     ax[3].set_xlabel(r'$t [s]$')
     plt.tight_layout()
@@ -434,7 +435,7 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
         for i in range(3):
             p1, = ax[i].plot(t_meas, y_measured[:n_tmeas, i+6], label='actual', color='C1', zorder=2)
             p2, = ax[i].plot(t_acc_est, accel_est[:n_taccest, i], label='mhe est', color='C0', zorder=3)
-            p3, = ax[i].plot(t_meas_noisy, y_measured_noisy[:n_tmeas, i+6], label="measurement", zorder=1, alpha=0.5)
+            p3, = ax[i].plot(t_meas_noisy, y_measured_noisy[:n_tmeas, i+6], label="measurement", color='C2', zorder=1, alpha=0.5)
 
             tit = 'a_' + labels[i] + ' measurement'
             # lns = [p2, p1]

@@ -21,7 +21,7 @@ from mavros_msgs.srv import CommandBool, SetMode
 def load_model(model_name, model_type):
     if model_type == "node":
         model = load_neural_ode(model_name)
-    if model_type == "GP":
+    if model_type == "gp":
         model = GPyModelWrapper(model_name, load=True)
     return model
 
@@ -160,28 +160,28 @@ class MPCNode:
         self.t_mpc = rospy.get_param("~t_mpc", default=1)
 
         # MPC Costs
-        q_p = np.ones((1,3)) * rospy.get_param("~q_p", default=35)
-        q_q = np.ones((1,3)) * rospy.get_param("~q_q", default=25)
-        q_v = np.ones((1,3)) * rospy.get_param("~q_v", default=10)
-        q_r = np.ones((1,3)) * rospy.get_param("~q_r", default=10)
+        q_p = np.ones((1,3)) * rospy.get_param("~cost/q_p", default=35)
+        q_q = np.ones((1,3)) * rospy.get_param("~cost/q_q", default=25)
+        q_v = np.ones((1,3)) * rospy.get_param("~cost/q_v", default=10)
+        q_r = np.ones((1,3)) * rospy.get_param("~cost/q_r", default=10)
 
-        qt_factor = rospy.get_param("~qt_factor", default=1)
+        qt_factor = rospy.get_param("~cost/qt_factor", default=1)
 
         q_mpc = np.squeeze(np.hstack((q_p, q_q, q_v, q_r)))
-        r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param("~r_mpc", default=0.1)
+        r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param("~cost/r_mpc", default=0.1)
 
         # Load Quad Instance
         self.quad = Quadrotor(self.quad_name)
 
         # Load NN models
         if (self.use_nn):
-            self.model_name = rospy.get_param("~model_name", default=None)
-            self.model_type = rospy.get_param("~model_type", default=None)
-            self.input_features = rospy.get_param("~input_features", default=None)
+            self.model_name = rospy.get_param("~nn/model_name", default=None)
+            self.model_type = rospy.get_param("~nn/model_type", default=None).lower()
+            self.input_features = rospy.get_param("~nn/input_features", default=None)
             self.nn_input_idx = features_to_idx(self.input_features)
-            self.output_features = rospy.get_param("~output_features", default=None)
+            self.output_features = rospy.get_param("~nn/output_features", default=None)
             self.nn_output_idx = features_to_idx(self.output_features)
-            self.correction_mode = rospy.get_param("~correction_mode", default="online")
+            self.correction_mode = rospy.get_param("~nn/correction_mode", default="online")
             self.nn_model = load_model(self.model_name)
             self.nn_params = {
                 'model_name': self.model_name,
@@ -477,9 +477,11 @@ class MPCNode:
                 self.opt_dt += self.quad_opt.get_opt_dt()
             else:
                 rospy.logwarn("MPC Optimization was not sucessful.")
+                return
         except RuntimeError as e:
             rospy.logwarn(f"MPC optimization failed with error: {str(e)}")
             # rospy.logwarn("Tried to run an MPC optimization but MPC is not ready yet.")
+            return
 
         # Publish controls
         control_method = 'w'

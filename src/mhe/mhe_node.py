@@ -3,6 +3,7 @@
 import rospy
 import threading
 import numpy as np
+import time
 
 from src.utils.utils import v_dot_q, features_to_idx
 from src.quad.quad import Quadrotor
@@ -55,6 +56,7 @@ class MHENode:
                 rate.sleep()
         
         if (self.mhe_type == "d" and not self.u_available):
+            self.u = np.ones(4) * self.quad.get_hover_thrust()
             rospy.loginfo("MHE: Waiting for Command Inputs...")
             while (not self.u_available and not rospy.is_shutdown()):
                 rate.sleep()
@@ -76,11 +78,13 @@ class MHENode:
         self.a = None
         self.y = None
         self.y_hist = np.zeros((0, 9))
+        self.y_hist_cp = None
         self.y_available = False
         self.y_history_filled = False
         # Initialize Input Command Variables
         self.u = None
         self.u_hist = np.zeros((0, 4))
+        self.u_hist_cp = None
         self.u_available = False
         self.u_history_filled = False
 
@@ -174,29 +178,29 @@ class MHENode:
 
         # MHE costs
         # System Noise
-        w_p = np.ones((1,3)) * rospy.get_param("~w_p", default=0.004)
-        w_q = np.ones((1,3)) * rospy.get_param("~w_q", default=0.01)
-        w_v = np.ones((1,3)) * rospy.get_param("~w_v", default=0.005)
-        w_r = np.ones((1,3)) * rospy.get_param("~w_r", default=0.5)
-        w_a = np.ones((1,3)) * rospy.get_param("~w_a", default=0.05)
-        w_d = np.ones((1,3)) * rospy.get_param("~w_d", default=0.00001)
+        w_p = np.ones((1,3)) * rospy.get_param("~cost/w_p", default=0.004)
+        w_q = np.ones((1,3)) * rospy.get_param("~cost/w_q", default=0.01)
+        w_v = np.ones((1,3)) * rospy.get_param("~cost/w_v", default=0.005)
+        w_r = np.ones((1,3)) * rospy.get_param("~cost/w_r", default=0.5)
+        w_a = np.ones((1,3)) * rospy.get_param("~cost/w_a", default=0.05)
+        w_d = np.ones((1,3)) * rospy.get_param("~cost/w_d", default=0.00001)
         # Measurement Noise
-        v_p = np.ones((1,3)) * rospy.get_param("~v_p", default=0.002)
-        v_r = np.ones((1,3)) * rospy.get_param("~v_r", default=1e-6)
-        v_a = np.ones((1,3)) * rospy.get_param("~v_a", default=1e-5)
-        v_d = np.ones((1,3)) * rospy.get_param("~v_d", default=0.0001)
+        v_p = np.ones((1,3)) * rospy.get_param("~cost/v_p", default=0.002)
+        v_r = np.ones((1,3)) * rospy.get_param("~cost/v_r", default=1e-6)
+        v_a = np.ones((1,3)) * rospy.get_param("~cost/v_a", default=1e-5)
+        v_d = np.ones((1,3)) * rospy.get_param("~cost/v_d", default=0.0001)
         # Arrival cost factor
-        q0_factor = rospy.get_param("~q0_factor", default=1)
+        q0_factor = rospy.get_param("~cost/q0_factor", default=1)
 
         if self.mhe_type == "k":
-            q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_a)))
+            q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_a))**2)
             r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_a))**2)
         elif self.mhe_type == "d":
             if not self.use_nn:
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r)))
+                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r))**2)
                 r_mhe = 1/np.squeeze(np.hstack((v_p, v_r))**2)
             if self.use_nn and self.correction_mode == "offline":
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d)))
+                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d))**2)
                 r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_d))**2)
 
         # Load Quadrotor instance
@@ -210,8 +214,8 @@ class MHENode:
 
     def motor_thrust_callback(self, msg):
         self.u = np.array(msg.angular_velocities)
-        self.u_hist = np.append(self.u_hist, self.u[np.newaxis, :], axis=0)
-        self.u_hist = np.append(self.u_hist, self.u[np.newaxis, :], axis=0)
+        # self.u_hist = np.append(self.u_hist, self.u[np.newaxis, :], axis=0)
+        # self.u_hist = np.append(self.u_hist, self.u[np.newaxis, :], axis=0)
         self.u_available = True
 
     def record_callback(self, msg):
@@ -278,7 +282,7 @@ class MHENode:
                 self.y = np.hstack((self.p, self.r, self.a))
         self.y_available = True
         
-        if self.mhe_type == "d" and not self.u_available:
+        if self.mhe_type == "d" and self.u is None:
             self.last_imu_seq_number = msg.header.seq
             return
 
@@ -291,24 +295,12 @@ class MHENode:
                 warn_msg = "MHE Recording time skipped messages: %d" % skipped_messages
                 rospy.logwarn(warn_msg)
         self.last_imu_seq_number = msg.header.seq
-        
-        self.lock.acquire()
-        extra_u_len = 0
-        if self.last_u_count == 2:
-            extra_u_len = 0
-        elif self.last_u_count == 0:
-            extra_u_len = 2
-        elif self.last_u_count == 1:
-            extra_u_len = 1
-        self.last_u_count += 1
 
         # Fill empty vectors with current sensor measurements and motor thrust
         if not self.y_history_filled:
             self.y_hist = np.tile(self.y, (self.n_mhe, 1))
             self.y_history_filled = True
-        if not self.u_history_filled and self.u is not None:
-            self.u_hist = np.tile(self.u, (self.n_mhe, 1))
-            self.u_history_filled = True
+        
         # Add current measurement to array and also add the number of missed measurements to be up to sync
         for _ in range(1 + skipped_messages):
             self.y_hist = np.append(self.y_hist, self.y[np.newaxis, :], axis=0)
@@ -316,9 +308,28 @@ class MHENode:
         # Correct Measurement and Input history list lengths
         if self.y_hist.shape[0] >= self.n_mhe:
             self.y_hist = self.y_hist[-(self.n_mhe):, :]
-        if self.u_hist.shape[0] > self.n_mhe+extra_u_len:
-            self.u_hist = self.u_hist[-(self.n_mhe+extra_u_len):, :]
-        self.lock.release()
+        self.y_hist_cp = self.y_hist.copy()
+        
+
+        if self.mhe_type == "d":
+            extra_u_len = 0
+            if self.last_u_count == 2:
+                extra_u_len = 0
+            elif self.last_u_count == 0:
+                extra_u_len = 2
+            elif self.last_u_count == 1:
+                extra_u_len = 1
+            self.last_u_count += 1
+            if not self.u_history_filled and self.u is not None:
+                self.u_hist = np.tile(self.u, (self.n_mhe, 1))
+                self.u_history_filled = True
+            for _ in range(1 + skipped_messages):
+                self.u_hist = np.append(self.u_hist, self.u[np.newaxis, :], axis=0)
+            # if self.u_hist.shape[0] > self.n_mhe+extra_u_len:
+            #     self.u_hist = self.u_hist[-(self.n_mhe+extra_u_len):, :]
+            if self.u_hist.shape[0] >= self.n_mhe:
+                self.u_hist = self.u_hist[-(self.n_mhe):, :]
+            self.u_hist_cp = self.u_hist.copy()
 
         # Run MHE
         def _mhe_thread_func():
@@ -328,22 +339,12 @@ class MHENode:
         self.mhe_thread = threading.Thread(target=_mhe_thread_func(), args=(), daemon=True)
         self.mhe_thread.start()
 
-    def run_mhe(self):
-        self.lock.acquire()
-        y_hist = self.y_hist.copy()
-        u_hist = self.u_hist.copy()
-        self.lock.release()
-        
-        self.mhe.set_history_trajectory(y_hist, u_hist)
-        try:
-            if (self.mhe.solve_mhe() == 0):
-                self.x_est = self.mhe.get_state_est()
-                self.opt_dt += self.mhe.get_opt_dt()
-                self.mhe_idx += 1
-            else:
-                rospy.logwarn("MPC Optimization was not sucessful.")
-        except RuntimeError as e:
-            rospy.logwarn(f"MPC optimization failed with error: {str(e)}")
+    def run_mhe(self):             
+        self.mhe.set_history_trajectory(self.y_hist_cp, self.u_hist_cp)
+        if (self.mhe.solve_mhe() == 0):
+            self.x_est = self.mhe.get_state_est()
+            self.opt_dt += self.mhe.get_opt_dt()
+            self.mhe_idx += 1
 
         # Publish acceleration estimation
         if self.mhe_type == "k":

@@ -187,3 +187,5 @@ class Quadrotor:
 
         return xf
 
+    def get_hover_thrust(self):
+        return self.hover_thrust

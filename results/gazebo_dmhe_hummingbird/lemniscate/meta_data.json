@@ -3,12 +3,12 @@
     "env": "gazebo",
     "t_mhe": 0.5,
     "n_mhe": 50,
-    "mhe_type": "k",
+    "mhe_type": "d",
     "use_nn": false,
     "model_type": null,
     "model_name": null,
     "correction_mode": null,
-    "p_rmse": 0.1835968342982101,
-    "q_rmse": 0.0004710434379109255,
-    "v_rmse": 0.2642476098026015
+    "p_rmse": 0.35861465735551196,
+    "q_rmse": 0.0031593970038881415,
+    "v_rmse": 0.4821634096928642
 }

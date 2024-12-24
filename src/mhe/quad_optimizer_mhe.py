@@ -19,7 +19,7 @@ import casadi as cs
 import numpy as np
 from scipy.linalg import block_diag
 import l4casadi as l4c
-
+import time
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 from src.utils.utils import v_dot_q
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
@@ -88,11 +88,11 @@ class QuadOptimizerMHE:
         if q0_factor is None:
             q0_factor = 1
         self.x0_bar = None
-        print("\n###########################################################################################")
-        print("Q_estimate         = ", q_mhe)
-        print("Q_arrival_cost     = ", q_mhe * q0_factor)
-        print("R_estimate         = ", r_mhe)
-        print("###########################################################################################\n")
+        # print("\n###########################################################################################")
+        # print("Q_estimate         = ", q_mhe)
+        # print("Q_arrival_cost     = ", q_mhe * q0_factor)
+        # print("R_estimate         = ", r_mhe)
+        # print("###########################################################################################\n")
         # Add one more weight to the rotation (use quaternion norm weighting in acados)
         q_mhe = np.concatenate((q_mhe[:3], np.mean(q_mhe[3:6])[np.newaxis], q_mhe[3:]))
         assert q_mhe is not None or r_mhe is not None
@@ -154,7 +154,9 @@ class QuadOptimizerMHE:
             self.u = cs.vertcat(u1, u2, u3, u4)
             # Full measurement state vector
             self.y = cs.vertcat(self.p, self.r)
-
+        # Set costs for w
+        self.w_cost = np.zeros((self.state_dim))
+        # Params
         self.param = np.array([])
 
     def quad_dynamics(self):
@@ -309,21 +311,20 @@ class QuadOptimizerMHE:
                 self.x0_bar = np.append(p, np.array(q + v + r + a))
             elif self.mhe_type == "d":
                 self.x0_bar = np.append(p, np.array(q + v + r))           
-
         
         # Set motor thrusts for dynamic MHE
-        elif self.mhe_type == "d":
+        if self.mhe_type == "d":
             for j in range(self.N):
                 u = np.array(cs.vertcat(u_history[j, :]))
                 self.acados_mhe_solver.set(j, 'p', u)
         # Initialise reference for mhe
         # First reference is set separately to set the arrival cost
         # Set history of state measurements
-        yref_0 = np.array(cs.vertcat(y_history[0, :], np.zeros((self.state_dim)), self.x0_bar))
+        yref_0 = np.array(cs.vertcat(y_history[0, :], self.w_cost, self.x0_bar))
         self.acados_mhe_solver.set(0, "yref", yref_0)
+        yrefs = [np.array(cs.vertcat(y_history[j, :], self.w_cost)) for j in range(self.N)]
         for j in range(1, self.N):
-            yref = np.array(cs.vertcat(y_history[j, :], np.zeros((self.state_dim))))
-            self.acados_mhe_solver.set(j, "yref", yref)
+            self.acados_mhe_solver.set(j, "yref", yrefs[j])
 
     def solve_mhe(self):
         """
