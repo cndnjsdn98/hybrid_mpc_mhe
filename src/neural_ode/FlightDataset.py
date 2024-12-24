@@ -76,7 +76,7 @@ class FlightDataset(Dataset):
     def configure_ds(self, n_integration):
         """
         Configure DataSet such that a single instance of training input 
-        is paried with n_itegration points into the future of training outputs 
+        is paired with n_itegration points into the future of training outputs 
         and time
         """
         # T is the total number of time steps, N is the number of input features
@@ -97,7 +97,7 @@ class FlightDataset(Dataset):
         for i in range(n_integration-1):
             train_out_reform[i+1, :, :] =self.train_out[i:i+num_samples, :]
 
-        # TODO: Need to fix this dt
+        # Integration times
         dt = 0
         for j in range(n_integration):
             out_times[j] =  dt

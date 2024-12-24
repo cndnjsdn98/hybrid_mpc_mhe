@@ -51,6 +51,8 @@ class VisualizerWrapper:
             self.mhe_type = "k"
         elif mhe_type == "dynamic":
             self.mhe_type = "d"
+        else:
+            self.mhe_type = None
         self.mhe_use_nn = rospy.get_param("/mhe/use_nn", default=False)
         self.mhe_model_name = rospy.get_param("/mhe/model_name", default=None)
         self.mhe_model_type = rospy.get_param("/mhe/model_type", default=None)
@@ -603,6 +605,9 @@ class VisualizerWrapper:
 
     def check_mhe_type(self, event):
         mhe_type = rospy.get_param("/mhe/mhe_type", default=None)
+        if mhe_type is None:
+            return
+        
         if mhe_type.lower() == "kinematic":
             mhe_type = "k"
         elif mhe_type.lower() == "dynamic":

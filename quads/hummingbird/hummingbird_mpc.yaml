@@ -32,9 +32,9 @@ cost/r_mpc: 1
 # Data Driven Model
 nn/input_features: "v"
 nn/output_features: "v"
-nn/model_name: "a_hummingbird_mpc_-1-20"
+nn/model_name: "gz_v_v_20_mpc"
 nn/model_type: "gp"
-nn/correction_mode: "online"
+nn/correction_mode: "offline"
 
 # Landing options
 land_z: 0.1

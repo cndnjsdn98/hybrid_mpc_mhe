@@ -76,11 +76,11 @@ class QuadOptimizerMPC:
         self.acados_models_dir = DirConfig.ACADOS_MODEL_DIR
 
         # Nominal model equations symbolic function (no NN)
-        self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u, self.param)
+        self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u, [])
 
         # Build full model for MPC. Will have 13 variables.
         acados_model, dynamics = self.acados_setup_model(
-            self.quad_xdot_nominal(x=self.x, u=self.u, p=self.param)['x_dot'])
+            self.quad_xdot_nominal(x=self.x, u=self.u, p=[])['x_dot'])
         
         # Weighted squared error loss function q = (p_xyz, a_xyz, v_xyz, r_xyz), r = (u1, u2, u3, u4)
         if q_mpc is None:
@@ -131,15 +131,21 @@ class QuadOptimizerMPC:
         self.param = np.array([])
         if self.use_nn:
             if self.correction_mode == "offline":
-                self.nn_corr = cs.MX.sym('d', len(self.nn_output_idx))
-                # Transform Velocity corrections to world frame
-                if "v" in self.output_features:
-                    v_states = [7, 8, 9]
-                    v_idx = [i for i, x in enumerate(self.nn_output_idx) if x in v_states]
-                    vb_corr = self.nn_corr[v_idx]
-                    vw_corr = v_dot_q(vb_corr, self.x[3:7])
-                    self.nn_corr[v_idx] = vw_corr
-                self.param = cs.vertcat(self.nn_corr)
+                self.nn_corr = cs.vertcat()
+                if "q" in self.input_features:
+                    self.nn_q = cs.MX.sym('nn_q', 4)
+                    self.param = cs.vertcat(self.param, self.nn_q)
+                    self.nn_corr = cs.vertcat(self.nn_corr, self.nn_q)
+                if "v" in self.input_features:
+                    self.nn_v_b = cs.MX.sym('nn_v', 3)
+                    # Transform Velocity corrections to world frame
+                    self.nn_v_w = v_dot_q(self.nn_v_b, self.x[3:7])
+                    self.param = cs.vertcat(self.param, self.nn_v_b)
+                    self.nn_corr = cs.vertcat(self.nn_corr, self.nn_v_w)
+                if "w" in self.input_features:
+                    self.nn_r = cs.MX.sym('nn_r', 3)
+                    self.param = cs.vertcat(self.param, self.nn_r)
+                    self.nn_corr = cs.vertcat(self.nn_corr, self.nn_r)
             elif self.correction_mode == "online":
                 # Model variables for Online predictions
                 # Used as initial state for NN prediction
@@ -326,11 +332,13 @@ class QuadOptimizerMPC:
         if self.use_nn:
             if self.correction_mode == "offline":
                 input = x0[self.nn_input_idx]
-                nn_corr_0 = self.nn_model.predict(input)
+                nn_corr_0 = self.nn_model.predict(input)[0]
                 self.acados_mpc_solver.set(0, 'p', nn_corr_0)
-                if nn_corr is not None:
-                    for j in range(1, self.N):
-                        self.acados_mpc_solver.set(j, 'p', nn_corr[j])
+                corr_len = nn_corr.shape[0]
+                for j in range(1, min(self.N, corr_len)):
+                    self.acados_mpc_solver.set(j, 'p', nn_corr[j])
+                for j in range(corr_len, self.N):
+                    self.acados_mpc_solver.set(j, 'p', nn_corr[-1])
             elif self.correction_mode == "online":
                 input = x0[self.nn_input_idx]
                 if 'u' in self.input_features:

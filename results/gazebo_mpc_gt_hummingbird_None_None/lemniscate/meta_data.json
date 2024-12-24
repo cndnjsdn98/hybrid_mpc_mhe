@@ -4,9 +4,9 @@
     "t_mpc": 1,
     "n_mpc": 10,
     "gt": true,
-    "use_nn": false,
+    "use_nn": true,
     "model_type": null,
     "model_name": null,
     "correction_mode": null,
-    "rmse": 0.31684405940405586
+    "rmse": 0.11569723740998086
 }

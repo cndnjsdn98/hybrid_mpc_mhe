@@ -98,7 +98,6 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     # Load Dataset
     flight_name = "%s_dmhe_%s"%(env, quad_name)
     results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
-    print(results_dir)
     # TODO: input feature for measurements fix
     x_features_idx = [6, 7, 8]
     y_features_idx = features_to_idx(output_feature)
@@ -126,7 +125,7 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     x, y = gp_ds.get_train_ds()
     x = torch.Tensor(x[:, x_features_idx])
     y = torch.Tensor(y[:, y_features_idx])
-    gp_model.visualize_model(x, y, compare_cs_gp=False)
+    gp_model.visualize_model(x, y,)
 
     return gp_model
 
@@ -142,7 +141,7 @@ if __name__ == "__main__":
     n_induce = 20
     verbose = 1
     keep_train_data = True
-    train_mpc = False
+    train_mpc = True
     train_mhe = True
     if train_mpc:
         train_MPC_gp(quad_name, 

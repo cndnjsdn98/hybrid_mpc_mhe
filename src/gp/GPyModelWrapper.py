@@ -106,7 +106,7 @@ class GPyModelWrapper:
         :type input: torch.Tensor
         :return Array of predicted mean and variance value for the given input value. 
         """
-        # cov_pred = np.zeros(input.shape)
+        cov_pred = np.zeros(input.shape)
         mean_pred = np.zeros(input.shape)
 
         # If the input is an array with only single prediction points
@@ -114,25 +114,21 @@ class GPyModelWrapper:
             num_dim = 3
             test_x = {}
             for i in range(len(input)):
-                test_x[i] = torch.Tensor([input[i]])
+                if gpu:
+                    test_x[i] = torch.Tensor([input[i]]).cuda()
+                else:
+                    test_x[i] = torch.Tensor([input[i]]).cpu()
         else:
             num_dim = input.shape[1]
-            test_x = torch.Tensor(input)
+            if gpu:
+                test_x = torch.Tensor(input).cuda()
+            else:
+                test_x = torch.Tensor(input).cpu()
         
         if gpu:
             self.gpu()
-            if input.ndim == 1:
-                for i in range(len(input)):
-                    test_x[i] = test_x[i].cuda()
-            else:
-                test_x = test_x.cuda()
         else:
             self.cpu()
-            if input.ndim == 1:
-                for i in range(len(input)):
-                    test_x[i] = test_x[i].cpu()
-                else:
-                    test_x = test_x.cpu()
                     
         # Make predictions by feeding model through likelihood
         with torch.no_grad(), gpytorch.settings.memory_efficient(),  \
@@ -144,20 +140,26 @@ class GPyModelWrapper:
             for i, model, likelihood in zip(range(num_dim), self.model.values(), self.likelihood.values()):
                 if input.ndim > 1:
                     prediction = likelihood(model(test_x[:, i]))
-                    # cov_pred[:, i] = prediction.variance.cpu().detach().numpy() # Bring back on to CPU 
+                    cov_pred[:, i] = prediction.variance.cpu().detach().numpy() # Bring back on to CPU 
                     mean_pred[:, i] = prediction.mean.detach().cpu().numpy()
                 else:
                     prediction = likelihood(model(test_x[i]))
-                    # cov_pred[i] = prediction.variance.cpu().detach().numpy()
+                    cov_pred[i] = prediction.variance.cpu().detach().numpy()
                     mean_pred[i] = prediction.mean.detach().cpu().numpy()
                 del prediction
                 torch.cuda.empty_cache()
     
         del test_x
+        if skip_variance:
+            if input.ndim == 1:
+                return [mean_pred]
+            else:
+                return mean_pred
+            
         if input.ndim == 1:
-            return [mean_pred]
+            return [cov_pred], [mean_pred]
         else:
-            return mean_pred
+            return cov_pred, mean_pred
 
     
     def load(self, keep_train_data = False):
@@ -193,7 +195,7 @@ class GPyModelWrapper:
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
             model = ApproximateGPModel(torch.linspace(0, 1, gp_config["induce_num"]))
             # load state_dict
-            state_dict = torch.load(os.path.join(self.gp_model_dir, "gpy_model_" + str(idx) + ".pth"))
+            state_dict = torch.load(os.path.join(self.gp_model_dir, "gpy_model_" + str(idx) + ".pth"), weights_only=True)
             model.load_state_dict(state_dict)
             model_dict[idx] = model.eval()
             likelihood_dict[idx] = likelihood.eval()
@@ -341,10 +343,12 @@ class GPyModelWrapper:
         y = y.cpu()
         # Plot data
         # Set Matplotlib interpreter as Latex
-        plt.rcParams['text.usetex'] = True
-        # params= {'text.latex.preamble' : [r'\usepackage{amsmath}']}
-        # plt.rcParams.update(params)
-        params= {'text.latex.preamble' : [r'\usepackage{amsmath}', r'\usepackage{fontenc}']}
+        # plt.rcParams['text.usetex'] = True
+        # params= {'text.latex.preamble' : [r'\usepackage{amsmath}', r'\usepackage{fontenc}']}
+        params = {
+            'text.usetex': True,
+            'text.latex.preamble': r'\usepackage{amsmath} \usepackage{fontenc}'
+        }
         plt.rcParams.update(params)
         plt.rcParams['font.family'] = 'DeJavu Serif'
         plt.rcParams['font.serif'] = ['Computer Modern Roman']
@@ -367,7 +371,7 @@ class GPyModelWrapper:
 
         # Plot along t
         # Predict using GPy model
-        cov, pred = self.predict(x)
+        cov, pred = self.predict(x, skip_variance=False)
 
         t_induce = np.linspace(0, x.shape[0] * dt, x.shape[0])
         for i, y_feature in enumerate(self.y_features):
@@ -392,7 +396,7 @@ class GPyModelWrapper:
         reg_resolution = 100
         x_reg = np.array([np.linspace(lower[i], upper[i], reg_resolution) for i in range(len(self.x_features))]).T
         # Predict using GPy model
-        cov, pred = self.predict(x_reg)
+        cov, pred = self.predict(x_reg, skip_variance=False)
         for i, idx_out in enumerate(self.y_features):
             fig, ax = plt.subplots(1,1, figsize=(6,4)) 
             ci = 1.96 * np.sqrt(cov[:, i])

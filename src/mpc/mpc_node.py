@@ -46,7 +46,7 @@ class MPCNode:
         rate = rospy.Rate(1)
         
         if not self.x_available:
-            rospy.loginfo("MPC: Waitign for System States...")
+            rospy.loginfo("MPC: Waiting for System States...")
             while(not self.x_available and not rospy.is_shutdown()):
                 rate.sleep()    
 
@@ -182,7 +182,7 @@ class MPCNode:
             self.output_features = rospy.get_param("~nn/output_features", default=None)
             self.nn_output_idx = features_to_idx(self.output_features)
             self.correction_mode = rospy.get_param("~nn/correction_mode", default="online")
-            self.nn_model = load_model(self.model_name)
+            self.nn_model = load_model(self.model_name, self.model_type)
             self.nn_params = {
                 'model_name': self.model_name,
                 'model_type': self.model_type,
@@ -195,14 +195,6 @@ class MPCNode:
             }
         else:
             self.nn_params = {}
-            # self.model_name = None
-            # self.model_type = None
-            # self.input_features = None
-            # self.nn_input_idx = None
-            # self.output_features = None
-            # self.nn_output_idx = None
-            # self.correction_mode = None
-            # self.nn_model = None
             self.nn_corr_i = None
             
         # Compile Acados Model
@@ -261,7 +253,7 @@ class MPCNode:
                 input = x_ref[:, self.nn_input_idx]
                 if "u" in self.input_features:
                     input = np.append(input, self.u_ref, axis=1)
-                self.nn_corr = self.nn_model.predict(input)
+                self.nn_corr = self.nn_model.predict(input, skip_variance=True)
 
             if len(self.t_ref) > 0:
                 rospy.loginfo("New trajectory received. Time duration: %.2f s" % self.t_ref[-1])
@@ -302,8 +294,9 @@ class MPCNode:
                 self.mpc_idx = 0
                 self.land_override = False
 
-            # TODO: If using offline GP set parameters
-
+            # If using offline GP set parameters - No corrections made
+            if self.use_nn and self.correction_mode == "offline":
+                self.nn_corr_i = np.zeros((self.n_mpc, len(self.nn_output_idx)))
             return self.quad_opt.set_reference(x_ref, u_ref)
 
         # If reference trajectory not received, pick current position as ref
@@ -315,8 +308,9 @@ class MPCNode:
                 rospy.loginfo("Selecting current position as provisional setpoint.")
             x_ref = self.x_ref_prov
             u_ref = self.u_ref_prov
-            # TODO: If using offline GP set parameters
-
+            # If using offline GP set parameters - No corrections made
+            if self.use_nn and self.correction_mode == "offline":
+                self.nn_corr_i = np.zeros((self.n_mpc, len(self.nn_output_idx)))
             return self.quad_opt.set_reference(x_ref, u_ref)
         
         # If reference exists then exit out of provisional hovering mode
@@ -354,8 +348,9 @@ class MPCNode:
                 x_ref[0, 1] = min(self.x_ref[0, 1], self.x[1] + dy) if dy > 0 else max(self.x_ref[0, 1], self.x[1] + dy)
                 x_ref[0, 2] = min(self.x_ref[0, 2], self.x[2] + dz) if dz > 0 else max(self.x_ref[0, 2], self.x[2] + dz)
             
-            # TODO: If with offline GP set params
-
+            # If with offline GP set params - No corrections made
+            if self.use_nn and self.correction_mode == "offline":
+                self.nn_corr_i = np.zeros((self.n_mpc, len(self.nn_output_idx)))
             return self.quad_opt.set_reference(x_ref, u_ref)
         
         # Executing Trajectory Tracking
@@ -372,7 +367,7 @@ class MPCNode:
             x_ref = ref_traj[downsample_ref_ind, :]
             u_ref = ref_u[downsample_ref_ind, :]
 
-            # TODO: If with offline GP retrieve GP corrections and set params
+            # If with offline GP retrieve GP corrections and set params
             if self.use_nn and self.correction_mode == "offline":
                 ref_corr = self.nn_corr[self.mpc_idx:self.mpc_idx + self.n_mpc * self.control_freq_factor, :]
                 self.nn_corr_i = ref_corr[downsample_ref_ind, :]
@@ -401,7 +396,9 @@ class MPCNode:
             x_ref[7:] = 0 # Set velocity states to zero
             u_ref = np.array([[0, 0, 0, 0]])
             
-            # TODO: if offline GP set parameters
+            # if offline GP set parameters
+            if self.use_nn and self.correction_mode == "offline":
+                self.nn_corr_i = np.zeros((self.n_mpc, len(self.nn_output_idx)))
             return self.quad_opt.set_reference(x_ref, u_ref)
         
     def state_est_callback(self, msg):
