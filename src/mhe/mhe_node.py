@@ -5,13 +5,13 @@ import threading
 import numpy as np
 import time
 
-from src.utils.utils import v_dot_q, features_to_idx
+from src.utils.utils import v_dot_q, state_features_to_idx, sensor_features_to_idx
 from src.quad.quad import Quadrotor
 from src.mhe.quad_optimizer_mhe import QuadOptimizerMHE
 from src.neural_ode.NeuralODE import load_neural_ode
 from src.gp.GPyModelWrapper import GPyModelWrapper
 
-from hybrid_mpc_mhe.msg import QuadSensor
+from hybrid_mpc_mhe.msg import QuadSensor, ModelCorrection
 from std_msgs.msg import Bool, Header
 from mav_msgs.msg import Actuators
 from nav_msgs.msg import Odometry
@@ -21,7 +21,7 @@ from geometry_msgs.msg import Pose, Point, Quaternion, Vector3
 def load_model(model_name, model_type):
     if model_type == "node":
         model = load_neural_ode(model_name)
-    if model_type == "GP":
+    if model_type == "gp":
         model = GPyModelWrapper(model_name, load=True)
     return model
 
@@ -44,8 +44,8 @@ class MHENode:
     def __init__(self):
         rospy.init_node('MHENode')
         self.init_params()
-        self.init_publishers()
         self.init_mhe()
+        self.init_publishers()
         self.init_subscribers()
 
         rate = rospy.Rate(1)
@@ -125,7 +125,11 @@ class MHENode:
         self.state_est_pub = rospy.Publisher(state_est_topic, Odometry, queue_size=10, tcp_nodelay=True)
         self.acceleration_est_pub = rospy.Publisher(acceleration_est_topic, Imu, queue_size=10, tcp_nodelay=True)
         self.sensor_measurement_pub = rospy.Publisher(sensor_measurement_topic, QuadSensor, queue_size=10, tcp_nodelay=True)
-    
+
+        if self.use_nn and self.correction_mode == "offline":
+            model_correction_topic = rospy.get_param("~model_correction_topic", default="/" + self.quad_name + "/mhe/model_correction")
+            self.model_correction_pub = rospy.Publisher(model_correction_topic, ModelCorrection, queue_size=10, tcp_nodelay=True)
+
     def init_subscribers(self):
         # Subscriber topic names
         motor_thrust_topic = rospy.get_param("/motor_thrust_topic", default="/" + self.quad_name + "/motor_thrust")
@@ -155,14 +159,14 @@ class MHENode:
         
         # Load NN models
         if (self.use_nn):
-            self.model_name = rospy.get_param("~model_name", default=None)
-            self.model_type = rospy.get_param("~model_type", default=None)
-            self.input_features = rospy.get_param("~input_features", default=None)
-            self.nn_input_idx = features_to_idx(self.input_features)
-            self.output_features = rospy.get_param("~output_features", default=None)
-            self.nn_output_idx = features_to_idx(self.output_features)
-            self.correction_mode = rospy.get_param("~correction_mode", default="online")
-            self.nn_model = load_model(self.model_name)
+            self.model_name = rospy.get_param("~nn/model_name", default=None)
+            self.model_type = rospy.get_param("~nn/model_type", default=None).lower()
+            self.input_features = rospy.get_param("~nn/input_features", default=None)
+            self.nn_input_idx = sensor_features_to_idx(self.input_features)
+            self.output_features = rospy.get_param("~nn/output_features", default=None)
+            self.nn_output_idx = state_features_to_idx(self.output_features)
+            self.correction_mode = rospy.get_param("~nn/correction_mode", default="online")
+            self.nn_model = load_model(self.model_name, self.model_type)
             self.nn_params = {
                 'model_name': self.model_name,
                 'model_type': self.model_type,
@@ -173,6 +177,7 @@ class MHENode:
                 "correction_mode": self.correction_mode,
                 'nn_model': self.nn_model,
             }
+            self.nn_corr = None
         else:
             self.nn_params = {}
 
@@ -275,8 +280,8 @@ class MHENode:
             if (self.correction_mode == "offline"):
                 # Compute model error using NN model
                 y = np.hstack((self.p, self.r, self.a))
-                nn_corr = self.nn_model(y[self.nn_input_idx])
-                self.y = np.hstack((self.p, self.r, nn_corr))
+                self.nn_corr = self.nn_model(y[self.nn_input_idx])
+                self.y = np.hstack((self.p, self.r, self.nn_corr))
             elif self.correction_mode == "online":
                 # TODO: it may not always be this 
                 self.y = np.hstack((self.p, self.r, self.a))
@@ -372,6 +377,21 @@ class MHENode:
         state_est_msg.twist.twist.linear = Vector3(*self.x_est[7:10])
         state_est_msg.twist.twist.angular = Vector3(*self.x_est[10:13])
         self.state_est_pub.publish(state_est_msg)
+
+        # Publish Model corrections if offline correction
+        if self.use_nn and self.correction_mode == "offline":
+            correction_msg = ModelCorrection()
+            idx = 13
+            if 'q' in self.output_features:
+                w, x, y, z = self.x_est[idx:idx+4]
+                correction_msg.orientation = Quaternion(x, y, z, w)
+                idx += 4
+            if 'v' in self.output_features:
+                correction_msg.velocity = Vector3(*self.x_est[idx:idx+3])
+                idx += 3
+            if 'w' in self.output_features:
+                correction_msg.angular_velocity = Vector3(*self.x_est[idx:idx+3])
+            self.model_correction_pub.publish(correction_msg)
 
         self.mhe_seq_num += 1
 

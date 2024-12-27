@@ -17,10 +17,10 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from quadrotor_msgs.msg import ControlCommand
-from hybrid_mpc_mhe.msg import ReferenceTrajectory, QuadSensor
+from hybrid_mpc_mhe.msg import ReferenceTrajectory, QuadSensor, ModelCorrection
 
 from src.quad.quad import Quadrotor
-from src.utils.utils import v_dot_q, quaternion_inverse, safe_mkdir_recursive, vw_to_vb, rmse, q_rmse
+from src.utils.utils import v_dot_q, quaternion_inverse, safe_mkdir_recursive, vw_to_vb, rmse, q_rmse, state_features_to_idx
 from src.visualization.visualization import trajectory_tracking_results, state_estimation_results
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 
@@ -40,9 +40,9 @@ class VisualizerWrapper:
         self.n_mpc = rospy.get_param("/mpc/n_mpc", default=10)
         self.use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=True)
         self.mpc_use_nn = rospy.get_param("/mpc/use_nn", default=False)
-        self.mpc_model_name = rospy.get_param("/mpc/model_name", default=None)
-        self.mpc_model_type = rospy.get_param("/mpc/model_type", default=None)
-        self.mpc_correction_mode = rospy.get_param("/mpc/correction_mode", default=None)
+        self.mpc_model_name = rospy.get_param("/mpc/nn/model_name", default=None)
+        self.mpc_model_type = rospy.get_param("/mpc/nn/model_type", default=None)
+        self.mpc_correction_mode = rospy.get_param("/mpc/nn/correction_mode", default=None)
 
         self.t_mhe = rospy.get_param("/mhe/t_mhe", default=0.5)
         self.n_mhe = rospy.get_param("/mhe/n_mhe", default=50)
@@ -54,9 +54,11 @@ class VisualizerWrapper:
         else:
             self.mhe_type = None
         self.mhe_use_nn = rospy.get_param("/mhe/use_nn", default=False)
-        self.mhe_model_name = rospy.get_param("/mhe/model_name", default=None)
-        self.mhe_model_type = rospy.get_param("/mhe/model_type", default=None)
-        self.mhe_correction_mode = rospy.get_param("/mhe/correction_mode", default=None)
+        self.mhe_model_name = rospy.get_param("/mhe/nn/model_name", default=None)
+        self.mhe_model_type = rospy.get_param("/mhe/nn/model_type", default=None)
+        self.mhe_correction_mode = rospy.get_param("/mhe/nn/correction_mode", default=None)
+        self.mhe_nn_output_features = rospy.get_param("/mhe/nn/output_features", default=None)
+        self.mhe_nn_output_idx = state_features_to_idx(self.mhe_nn_output_features)
         # Override since K-MHE never uses NN
         if self.mhe_type == "k":
             self.mhe_use_nn = False
@@ -85,6 +87,7 @@ class VisualizerWrapper:
             'model_type': self.mhe_model_type,
             'model_name': self.mhe_model_name,
             'correction_mode': self.mhe_correction_mode,
+            'output_features': self.mhe_nn_output_features,
         }
         # Create MPC Directory
         if self.mpc_use_nn:
@@ -98,6 +101,8 @@ class VisualizerWrapper:
                                                  use_nn_str)
         self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
         safe_mkdir_recursive(self.mpc_dir)
+        rospy.loginfo("MHE: %s"%self.mpc_dataset_name)
+
         # Create MHE Directory if MHE Type is given
         # else check every second
         if self.mhe_type is not None:
@@ -112,6 +117,7 @@ class VisualizerWrapper:
                                                    use_nn_str)
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
             safe_mkdir_recursive(self.mhe_dir)
+            rospy.loginfo("MHE: %s"%self.mhe_dataset_name)
 
         # Check every 1 second if MPC/MHE parameters have changed
         self.timer_use_gt = rospy.Timer(rospy.Duration(1), self.check_use_gt)
@@ -142,6 +148,10 @@ class VisualizerWrapper:
         self.motor_thrusts = np.zeros((0, 4))
         self.w_control = np.zeros((0, 3))
         self.collective_thrusts = np.zeros((0, 1))
+        if self.mhe_type == "d" and self.mhe_use_nn and self.mhe_correction_mode == "offline":
+            self.mhe_model_corr = np.zeros((0, len(self.mhe_nn_output_idx)))
+        else:
+            self.mhe_model_corr = None
 
         # System States
         self.p_act = None
@@ -162,6 +172,7 @@ class VisualizerWrapper:
         control_topic = rospy.get_param("/control_topic", default = "/" + self.quad_name + "/autopilot/control_command_input")
         record_topic = rospy.get_param("/record_topic", default = "/" + self.quad_name + "/record")
         sensor_measurement_topic = rospy.get_param("/sensor_measurement_topic", default="/" + self.quad_name + "/sensor_measurement") 
+        mhe_model_correction_topic = rospy.get_param("~model_correction_topic", default="/" + self.quad_name + "/mhe/model_correction")
 
         # Subscribers
         self.imu_sub = rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=1, tcp_nodelay=False)
@@ -176,10 +187,12 @@ class VisualizerWrapper:
             self.control_sub = rospy.Subscriber(control_topic, AttitudeTarget, self.control_callback, queue_size=1, tcp_nodelay=False)
         self.record_sub = rospy.Subscriber(record_topic, Bool, self.record_callback, queue_size=1, tcp_nodelay=False)
         self.sensor_measurement_sub = rospy.Subscriber(sensor_measurement_topic, QuadSensor, self.sensor_measurement_callback, queue_size=1, tcp_nodelay=True)
+        self.mhe_model_correction_sub = rospy.Subscriber(mhe_model_correction_topic, ModelCorrection, self.mhe_model_corr_callback, queue_size=10, tcp_nodelay=True)
+
         rospy.loginfo("Visualizer on standby listening...")
-        rospy.loginfo("MPC w/%s NN"% ("OUT" if not self.mpc_use_nn else ""))
+        rospy.loginfo("MPC w/%s"% ("OUT NN" if not self.mpc_use_nn else " %s %s"%(self.mpc_model_type.upper(), self.mpc_correction_mode)))
         if self.mhe_type is not None:
-            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s"%self.mhe_model_type))
+            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s %s"%(self.mhe_model_type.upper(), self.mhe_correction_mode)))
 
 
     def save_recording_data(self):
@@ -315,7 +328,10 @@ class VisualizerWrapper:
                                                       self.t_sensor_measurement[-1])
             self.t_sensor_measurement = self.t_sensor_measurement[:self.seq_len * 2]
             self.y_noisy = self.y_noisy[:self.seq_len * 2]
-                
+            if self.mhe_model_corr is not None and len(self.mhe_model_corr) > 0:
+                while len(self.mhe_model_corr) < self.seq_len * 2:
+                    self.mhe_model_corr = np.append(self.mhe_model_corr, self.mhe_model_corr[-1][np.newaxis], axis=0)
+
             mhe_error = np.zeros_like(self.x_est)
             a_meas_traj = np.zeros((len(self.x_est), 3))
             a_est_b_traj = np.zeros((len(self.x_est), 3))
@@ -389,7 +405,8 @@ class VisualizerWrapper:
                 else:
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
                                              self.t_sensor_measurement, self.y_noisy, mhe_error, a_thrust=a_thrust_traj, 
-                                             a_meas=a_meas_traj, file_type='png')
+                                             a_meas=a_meas_traj, model_corr=self.mhe_model_corr, model_corr_features=self.mhe_nn_output_features,
+                                             file_type='png', )
             except Exception as e:
                 rospy.logerr(f"An error occurred while plotting state estimation results: {e}")    
         else:
@@ -416,7 +433,11 @@ class VisualizerWrapper:
         self.motor_thrusts = np.zeros((0, 4))
         self.w_control = np.zeros((0, 3))
         self.collective_thrusts = np.zeros((0, 1))
-
+        # Init vectors to save model corrections
+        if self.mhe_type == "d" and self.mhe_use_nn and self.mhe_correction_mode == "offline":
+            self.mhe_model_corr = np.zeros((0, len(self.mhe_nn_output_idx)))
+        else:
+            self.mhe_model_corr = None
         # System States
         self.p_act = None
         self.q_act = None
@@ -556,6 +577,19 @@ class VisualizerWrapper:
         self.y_noisy = np.append(self.y_noisy, np.array(y_noisy)[np.newaxis, :], axis=0)
         self.t_sensor_measurement = np.append(self.t_sensor_measurement, msg.header.stamp.to_time())
 
+    def mhe_model_corr_callback(self, msg):
+        if not self.record:
+            return
+        
+        model_corr = []
+        if 'q' in self.mhe_nn_output_features:
+            model_corr += [msg.orientation.w, msg.orientation.x, msg.orientation.y, msg.orientation.z]
+        if 'v' in self.mhe_nn_output_features:
+            model_corr += [msg.velocity.x, msg.velocity.y, msg.velocity.z]
+        if 'w' in self.mhe_nn_output_features:
+            model_corr += [msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z]
+        self.mhe_model_corr = np.append(self.mhe_model_corr, np.array(model_corr)[np.newaxis, :], axis=0)
+
     def check_use_gt(self, event):
         use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=None)
         if use_groundtruth is not None and self.use_groundtruth != use_groundtruth:
@@ -571,10 +605,10 @@ class VisualizerWrapper:
                                                      self.quad_name,
                                                      use_nn_str)
             self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
-            safe_mkdir_recursive(self.mpc_dir)
             self.mpc_meta['gt'] = use_groundtruth
             # Create Directory
             safe_mkdir_recursive(self.mpc_dir)
+            rospy.loginfo("MHE: %s"%self.mpc_dataset_name)
 
     def check_mpc_use_nn(self, event):
         mpc_use_nn = rospy.get_param("/mpc/use_nn", default=None)
@@ -584,7 +618,7 @@ class VisualizerWrapper:
             self.mpc_model_type = rospy.get_param("/mpc/model_type", default=None)
             self.mpc_correction_mode = rospy.get_param("/mpc/correction_mode", default=None)
 
-            rospy.loginfo("MPC w/%s"% ("OUT NN" if not mpc_use_nn else " %s"%self.mpc_model_type))
+            rospy.loginfo("MPC w/%s"% ("OUT NN" if not self.mpc_use_nn else " %s %s"%(self.mpc_model_type.upper(), self.mpc_correction_mode)))
             if self.mpc_use_nn:
                 use_nn_str = "_%s_%s"%(self.mpc_model_type,
                                        self.mpc_correction_mode)
@@ -602,6 +636,7 @@ class VisualizerWrapper:
 
             # Create Directory
             safe_mkdir_recursive(self.mpc_dir)
+            rospy.loginfo("MHE: %s"%self.mpc_dataset_name)
 
     def check_mhe_type(self, event):
         mhe_type = rospy.get_param("/mhe/mhe_type", default=None)
@@ -614,7 +649,7 @@ class VisualizerWrapper:
             mhe_type = "d"
         if mhe_type is not None and self.mhe_type != mhe_type:
             self.mhe_type = mhe_type
-            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s"%self.mhe_model_type))
+            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s %s"%(self.mhe_model_type.upper(), self.mhe_correction_mode)))
             self.mhe_meta['mhe_type'] = self.mhe_type
             if self.mhe_use_nn:
                 use_nn_str = "_%s_%s"%(self.mhe_model_type,
@@ -628,6 +663,7 @@ class VisualizerWrapper:
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
             # Create Directory
             safe_mkdir_recursive(self.mhe_dir)
+            rospy.loginfo("MHE: %s"%self.mhe_dataset_name)
 
     def check_mhe_use_nn(self, event):
         if self.mhe_type == "k":
@@ -636,15 +672,31 @@ class VisualizerWrapper:
         mhe_use_nn = rospy.get_param("/mhe/use_nn", default=None)
         if mhe_use_nn is not None and self.mhe_use_nn != mhe_use_nn:
             self.mhe_use_nn = mhe_use_nn
-            self.mhe_model_name = rospy.get_param("/mhe/model_name", default=None)
-            self.mhe_model_type = rospy.get_param("/mhe/model_type", default=None)
-            self.mhe_correction_mode = rospy.get_param("/mhe/correction_mode", default=None)
-            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s"%self.mhe_model_type))
+            if self.mhe_use_nn:
+                self.mhe_model_name = rospy.get_param("/mhe/nn/model_name", default=None)
+                self.mhe_model_type = rospy.get_param("/mhe/nn/model_type", default=None)
+                self.mhe_correction_mode = rospy.get_param("/mhe/nn/correction_mode", default=None)
+                self.mhe_nn_output_features = rospy.get_param("/mhe/nn/output_features", default=None)
+                self.mhe_nn_output_idx = state_features_to_idx(self.mhe_nn_output_features)
+            else:
+                self.mhe_model_name = None
+                self.mhe_model_type = None
+                self.mhe_correction_mode = None
+                self.mhe_nn_output_features = None
+                self.mhe_nn_output_idx = None
+            # Init vectors to save model corrections
+            if self.mhe_use_nn and self.mhe_correction_mode == "offline":
+                self.mhe_model_corr = np.zeros((0, len(self.mhe_nn_output_idx)))
+            else:
+                self.mhe_model_corr = None
+
+            rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s %s"%(self.mhe_model_type.upper(), self.mhe_correction_mode)))
 
             self.mhe_meta['use_nn'] = self.mhe_use_nn
             self.mhe_meta['model_type'] = self.mhe_model_type
             self.mhe_meta['model_name'] = self.mhe_model_name
             self.mhe_meta['correction_mode'] = self.mhe_correction_mode
+            self.mhe_meta['output_features'] = self.mhe_nn_output_features
             if self.mhe_use_nn:
                 use_nn_str = "_%s_%s"%(self.mhe_model_type,
                                         self.mhe_correction_mode)
@@ -658,6 +710,7 @@ class VisualizerWrapper:
 
             # Create Directory
             safe_mkdir_recursive(self.mhe_dir)
+            rospy.loginfo("MHE: %s"%self.mhe_dataset_name)
 
 
 

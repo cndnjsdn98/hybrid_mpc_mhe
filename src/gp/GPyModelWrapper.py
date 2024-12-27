@@ -11,7 +11,7 @@ from src.gp.gpy_model import *
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 import matplotlib.pyplot as plt
 
-class GPyModelWrapper:
+class GPyModelWrapper(torch.nn.Module):
     """
     Class for storing GPy Models, likelihood and its necessary parameters. 
     """
@@ -34,6 +34,8 @@ class GPyModelWrapper:
         :param y_features: Index of output dimension being regressed as the time-derivative.
         :type y_features: list  
         """
+        super().__init__()
+
         self.machine = 0 # 0 indicttes cpu and 1 indicates gpu
         self.model_name = model_name
         self.mhe = mhe
@@ -151,10 +153,10 @@ class GPyModelWrapper:
     
         del test_x
         if skip_variance:
-            if input.ndim == 1:
-                return [mean_pred]
-            else:
-                return mean_pred
+            # if input.ndim == 1:
+            #     return [mean_pred]
+            # else:
+            return mean_pred
             
         if input.ndim == 1:
             return [cov_pred], [mean_pred]
@@ -476,3 +478,5 @@ class GPyModelWrapper:
             likelihood_device[x_feature] = next(self.likelihood[x_feature].parameters()).device
         return model_device, likelihood_device
         
+    def forward(self, x):
+        return self.predict(x, skip_variance=True)

@@ -5,10 +5,11 @@
     "n_mhe": 50,
     "mhe_type": "d",
     "use_nn": false,
-    "model_type": null,
-    "model_name": null,
-    "correction_mode": null,
-    "p_rmse": 0.35861465735551196,
-    "q_rmse": 0.0031593970038881415,
-    "v_rmse": 0.4821634096928642
+    "model_type": "gp",
+    "model_name": "gz_a_v_20_mhe",
+    "correction_mode": "offline",
+    "output_features": "v",
+    "p_rmse": 0.4465385197541358,
+    "q_rmse": 0.0007167820639541686,
+    "v_rmse": 0.6095647354698766
 }

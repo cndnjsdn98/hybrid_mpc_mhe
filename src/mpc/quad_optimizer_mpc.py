@@ -128,7 +128,7 @@ class QuadOptimizerMPC:
         self.u = cs.vertcat(u1, u2, u3, u4)
 
         # Model Corrections using NN
-        self.param = np.array([])
+        self.param = cs.vertcat()
         if self.use_nn:
             if self.correction_mode == "offline":
                 self.nn_corr = cs.vertcat()
@@ -331,8 +331,7 @@ class QuadOptimizerMPC:
         # Set parameters for NN
         if self.use_nn:
             if self.correction_mode == "offline":
-                input = x0[self.nn_input_idx]
-                nn_corr_0 = self.nn_model.predict(input)[0]
+                nn_corr_0 = self.nn_model(x0[self.nn_input_idx])
                 self.acados_mpc_solver.set(0, 'p', nn_corr_0)
                 corr_len = nn_corr.shape[0]
                 for j in range(1, min(self.N, corr_len)):

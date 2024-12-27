@@ -206,7 +206,7 @@ def separate_variables(traj):
     
     return [p_traj, q_traj, v_traj, r_traj]
 
-def features_to_idx(features):
+def state_features_to_idx(features):
     """
     Converts string input of input/output features to corresponding state indexes
     """
@@ -223,6 +223,25 @@ def features_to_idx(features):
         idx.extend(v)
     if 'w' in features:
         idx.extend(w)
+    return idx
+
+def sensor_features_to_idx(features):
+    """
+    Converts string input of input/output features to corresponding state indexes
+    """
+    if features is None:
+        return None
+    
+    p = [0, 1, 2]
+    w= [3, 4, 5]
+    a = [6, 7, 8]
+    idx = []
+    if 'p' in features:
+        idx.extend(p)
+    if 'w' in features:
+        idx.extend(w)
+    if 'a' in features:
+        idx.extend(a)
     return idx
 
 def unwrap(p):

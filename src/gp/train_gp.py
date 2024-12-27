@@ -10,7 +10,7 @@ from src.gp.GPyModelWrapper import GPyModelWrapper
 from src.gp.gp_utils import *
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 from src.gp.GPDataset import GPDataset
-from src.utils.utils import features_to_idx
+from src.utils.utils import state_features_to_idx, sensor_features_to_idx
 
 def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, output_feature, n_induce=None, verbose=0,keep_train_data=False):
     """
@@ -41,8 +41,8 @@ def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, outp
     # Load Dataset
     flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
     results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
-    x_features_idx = features_to_idx(input_feature)
-    y_features_idx = features_to_idx(output_feature)
+    x_features_idx = state_features_to_idx(input_feature)
+    y_features_idx = state_features_to_idx(output_feature)
     gp_ds = GPDataset(results_dir)
 
     # Select data points to be used
@@ -99,8 +99,8 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     flight_name = "%s_dmhe_%s"%(env, quad_name)
     results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
     # TODO: input feature for measurements fix
-    x_features_idx = [6, 7, 8]
-    y_features_idx = features_to_idx(output_feature)
+    x_features_idx = sensor_features_to_idx(input_feature)
+    y_features_idx = state_features_to_idx(output_feature)
     # TODO: Change to FlightDataset
     gp_ds = GPDataset(results_dir)
     
@@ -134,7 +134,8 @@ if __name__ == "__main__":
     trajectory_name = "lemniscate"
     environment = "gazebo"
     gt = True
-    input_feature = 'v'
+    mpc_input_feature = 'v'
+    mhe_input_feature = 'a'
     output_feature = 'v'
     mpc_epoch = 1000
     mhe_epoch = 500
@@ -149,7 +150,7 @@ if __name__ == "__main__":
                     environment, 
                     gt, 
                     mpc_epoch,  
-                    input_feature,
+                    mpc_input_feature,
                     output_feature,
                     n_induce=n_induce,
                     verbose=verbose,
@@ -159,7 +160,7 @@ if __name__ == "__main__":
                     trajectory_name,
                     environment,
                     mhe_epoch,
-                    input_feature,
+                    mhe_input_feature,
                     output_feature,
                     n_induce=n_induce,
                     verbose=verbose,

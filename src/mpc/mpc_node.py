@@ -4,7 +4,7 @@ import rospy
 import threading
 import numpy as np
 
-from src.utils.utils import v_dot_q, quaternion_state_mse, features_to_idx, world_to_body_velocity_mapping
+from src.utils.utils import v_dot_q, quaternion_state_mse, state_features_to_idx, world_to_body_velocity_mapping
 from src.quad.quad import Quadrotor
 from src.mpc.quad_optimizer_mpc import QuadOptimizerMPC
 from src.neural_ode.NeuralODE import load_neural_ode
@@ -178,9 +178,9 @@ class MPCNode:
             self.model_name = rospy.get_param("~nn/model_name", default=None)
             self.model_type = rospy.get_param("~nn/model_type", default=None).lower()
             self.input_features = rospy.get_param("~nn/input_features", default=None)
-            self.nn_input_idx = features_to_idx(self.input_features)
+            self.nn_input_idx = state_features_to_idx(self.input_features)
             self.output_features = rospy.get_param("~nn/output_features", default=None)
-            self.nn_output_idx = features_to_idx(self.output_features)
+            self.nn_output_idx = state_features_to_idx(self.output_features)
             self.correction_mode = rospy.get_param("~nn/correction_mode", default="online")
             self.nn_model = load_model(self.model_name, self.model_type)
             self.nn_params = {

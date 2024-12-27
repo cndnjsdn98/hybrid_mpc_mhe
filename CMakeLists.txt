@@ -32,6 +32,7 @@ add_message_files(
   FILES
   ReferenceTrajectory.msg
   QuadSensor.msg
+  ModelCorrection.msg
 )
 
 # Generate added messages and services with any dependencies listed here
