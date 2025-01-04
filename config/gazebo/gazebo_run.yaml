@@ -12,10 +12,10 @@ sensor_noise: true
 # r_noise_std: 0.007
 # a_noise_std: 0.007
 # # Noise Level II -----------------
-p_noise_std: 0.5
-r_noise_std: 0.015
-a_noise_std: 0.01
+# p_noise_std: 0.5
+# r_noise_std: 0.015
+# a_noise_std: 0.01
 # # Noise Level III ----------------
-# p_noise_std: 1
-# r_noise_std: 0.03
-# a_noise_std: 0.1
+p_noise_std: 1
+r_noise_std: 0.03
+a_noise_std: 0.1

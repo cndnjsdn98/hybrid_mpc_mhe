@@ -208,6 +208,7 @@ class QuadOptimizerMHE:
             g = cs.vertcat(0.0, 0.0, 9.81)
             v_dyn = v_dot_q(self.a, self.q) - g
             a_dyn = cs.vertcat(0, 0, 0)
+            corr_dyn = cs.vertcat()
         elif self.mhe_type == "d":
             v_dyn = self.quad.v_dynamics(self.x, self.u)
             a_dyn = cs.vertcat()

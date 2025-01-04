@@ -191,6 +191,7 @@ class VisualizerWrapper:
 
         rospy.loginfo("Visualizer on standby listening...")
         rospy.loginfo("MPC w/%s"% ("OUT NN" if not self.mpc_use_nn else " %s %s"%(self.mpc_model_type.upper(), self.mpc_correction_mode)))
+        rospy.loginfo("%sUsing Groundtruth!"%("" if self.use_groundtruth else "NOT "))
         if self.mhe_type is not None:
             rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s %s"%(self.mhe_model_type.upper(), self.mhe_correction_mode)))
 
@@ -333,34 +334,42 @@ class VisualizerWrapper:
                     self.mhe_model_corr = np.append(self.mhe_model_corr, self.mhe_model_corr[-1][np.newaxis], axis=0)
 
             mhe_error = np.zeros_like(self.x_est)
-            a_meas_traj = np.zeros((len(self.x_est), 3))
             a_est_b_traj = np.zeros((len(self.x_est), 3))
             a_thrust_traj = np.zeros((len(self.x_est), 3))
+            a_meas_no_g = np.zeros((len(self.x_est), 3))
             rospy.loginfo("Filling in MHE dataset and saving...")
-            g = cs.vertcat(0, 0, -9.81)
             for i in tqdm(range(self.seq_len*2)):
                 u = self.motor_thrusts[i]
-                q_act = self.x_act[i][3:7]
-                q_act_inv = quaternion_inverse(q_act)
                 q = self.x_est[i][3:7]
                 q_inv = quaternion_inverse(q)
-
-                # Measured Acceleration
-                a_meas = self.y[i][6:9]
-                a_meas = np.stack(a_meas + v_dot_q(g, q_inv).T)
-                a_meas_traj[i] = np.squeeze(self.y[i][6:9])
+                q_act_inv = quaternion_inverse(self.x_act[i][3:7])
 
                 # Model Accel Estimation
-                a_thrust = cs.vertcat(0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.max_thrust) / self.quad.mass
+                a_thrust = np.array([0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.max_thrust / self.quad.mass])
                 a_thrust_traj[i] = np.squeeze(a_thrust.T)
-
+                g = np.array([0, 0, -9.81])
                 a_est_b = v_dot_q(v_dot_q(a_thrust, q) + g, q_inv)
                 a_est_b = np.squeeze(a_est_b.T)
                 a_est_b_traj[i] = a_est_b
 
+                # Measured Acceleration
+                a_meas = self.y_noisy[i][6:9]
+                a_meas = np.stack(a_meas + v_dot_q(g, q_inv).T)              
+                # a_meas = v_dot_q(v_dot_q(a_meas, q) + g, q_inv)
+                a_meas_no_g[i] = a_meas
+
+                # print(a_thrust)
+                # print(a_est_b)
+                # print(a_meas)
+                # print(a_meas - a_est_b)
+                # print(self.y_noisy[i][6:9])
+                # print("____________")
+
                 # MHE Model Error
                 a_error = np.concatenate((np.zeros((1, 7)), a_meas - a_est_b, np.zeros((1, 3))), axis=None)
                 mhe_error[i] = a_error
+
+            # Compute MHE Estimation Error
             mhe_p_error = rmse(self.t_act, self.x_act[:, :3], self.t_est, self.x_est[:, :3])
             mhe_q_error = q_rmse(self.t_act, self.x_act[:, 3:7], self.t_est, self.x_est[:, 3:7])
             mhe_v_error = rmse(self.t_act, self.x_act[:, 7:10], self.t_est, self.x_est[:, 7:10])
@@ -369,7 +378,7 @@ class VisualizerWrapper:
                 "t": self.t_imu,
                 "x_est": self.x_est,
                 "x_act": self.x_act,
-                "sensor_meas": self.y,
+                "sensor_meas": self.y_noisy,
                 "motor_thrusts": self.motor_thrusts,
                 "error": mhe_error,
                 "a_est_b": a_est_b_traj,
@@ -401,11 +410,11 @@ class VisualizerWrapper:
                 if self.mhe_type == "k":
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
                                              self.t_sensor_measurement, self.y_noisy, mhe_error, t_acc_est=self.t_acc_est, 
-                                             accel_est=self.accel_est, file_type='png')
+                                             accel_est=self.accel_est, file_type='png', a_est_b=a_est_b_traj, a_meas_b=a_meas_no_g)
                 else:
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
                                              self.t_sensor_measurement, self.y_noisy, mhe_error, a_thrust=a_thrust_traj, 
-                                             a_meas=a_meas_traj, model_corr=self.mhe_model_corr, model_corr_features=self.mhe_nn_output_features,
+                                             model_corr=self.mhe_model_corr, model_corr_features=self.mhe_nn_output_features,
                                              file_type='png', )
             except Exception as e:
                 rospy.logerr(f"An error occurred while plotting state estimation results: {e}")    

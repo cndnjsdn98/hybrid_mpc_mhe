@@ -9,7 +9,7 @@
     "model_name": "gz_a_v_20_mhe",
     "correction_mode": "offline",
     "output_features": "v",
-    "p_rmse": 0.4985293046639734,
-    "q_rmse": 0.0013103616178507865,
-    "v_rmse": 0.668598702039356
+    "p_rmse": 0.6962877943348419,
+    "q_rmse": 0.0040742825045998925,
+    "v_rmse": 0.9236185968680738
 }

@@ -96,7 +96,7 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     load_model = False
 
     # Load Dataset
-    flight_name = "%s_dmhe_%s"%(env, quad_name)
+    flight_name = "%s_kmhe_%s"%(env, quad_name)
     results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
     # TODO: input feature for measurements fix
     x_features_idx = sensor_features_to_idx(input_feature)
@@ -131,7 +131,7 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
 
 if __name__ == "__main__":
     quad_name = "hummingbird"
-    trajectory_name = "lemniscate"
+    trajectory_name = "circle"
     environment = "gazebo"
     gt = True
     mpc_input_feature = 'v'
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     n_induce = 20
     verbose = 1
     keep_train_data = True
-    train_mpc = True
+    train_mpc = False
     train_mhe = True
     if train_mpc:
         train_MPC_gp(quad_name, 

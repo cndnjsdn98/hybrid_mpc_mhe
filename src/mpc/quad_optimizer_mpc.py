@@ -89,11 +89,11 @@ class QuadOptimizerMPC:
             r_mpc = np.array([0.1, 0.1, 0.1, 0.1])
         if qt_factor is None:
             qt_factor = 0
-        print("\n###########################################################################################")
-        print("Q_control          = ", q_mpc)
-        print("Q_control_Terminal = ", q_mpc * qt_factor)
-        print("R_control          = ", r_mpc)
-        print("###########################################################################################\n")
+        # print("\n###########################################################################################")
+        # print("Q_control          = ", q_mpc)
+        # print("Q_control_Terminal = ", q_mpc * qt_factor)
+        # print("R_control          = ", r_mpc)
+        # print("###########################################################################################\n")
         # Add one more weight to the rotation (use quaternion norm weighting in acados)
         q_mpc = np.concatenate((q_mpc[:3], np.mean(q_mpc[3:6])[np.newaxis], q_mpc[3:]))   
 
