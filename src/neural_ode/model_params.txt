@@ -1,4 +1,4 @@
---exp_typ=hidden
+--exp_typ=v_features
 --activation_hidden=tanh
 --activation_out=linear
 --epochs=10000

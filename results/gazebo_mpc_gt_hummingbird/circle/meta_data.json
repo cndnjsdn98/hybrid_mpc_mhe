@@ -5,8 +5,7 @@
     "n_mpc": 10,
     "gt": true,
     "use_nn": false,
-    "model_type": "gp",
-    "model_name": "gz_v_v_20_mpc",
-    "correction_mode": "offline",
-    "rmse": 0.4592707550914458
+    "model_type": null,
+    "model_name": null,
+    "correction_mode": null
 }
