@@ -1,1 +1,1 @@
-{"x_features": [6, 7, 8], "y_features": [7, 8, 9], "u_features": [], "train_length": 3, "train_iter": 500, "induce_num": 20, "mhe": "True"}
+{"x_features": [6, 7, 8], "y_features": [7, 8, 9], "u_features": [], "train_length": 3, "train_iter": 300, "induce_num": 20, "mhe": "True"}

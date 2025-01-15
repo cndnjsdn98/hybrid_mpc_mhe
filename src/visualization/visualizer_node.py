@@ -36,13 +36,20 @@ class VisualizerWrapper:
         
         self.quad = Quadrotor(self.quad_name, prop=True)
 
+        self.overwrite = rospy.get_param("~overwrite", default=False)
+
         self.t_mpc = rospy.get_param("/mpc/t_mpc", default=1)
         self.n_mpc = rospy.get_param("/mpc/n_mpc", default=10)
         self.use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=True)
         self.mpc_use_nn = rospy.get_param("/mpc/use_nn", default=False)
-        self.mpc_model_name = rospy.get_param("/mpc/nn/model_name", default=None)
-        self.mpc_model_type = rospy.get_param("/mpc/nn/model_type", default=None)
-        self.mpc_correction_mode = rospy.get_param("/mpc/nn/correction_mode", default=None)
+        if self.mpc_use_nn:
+            self.mpc_model_name = rospy.get_param("/mpc/nn/model_name", default=None)
+            self.mpc_model_type = rospy.get_param("/mpc/nn/model_type", default=None)
+            self.mpc_correction_mode = rospy.get_param("/mpc/nn/correction_mode", default=None)
+        else:
+            self.mpc_model_name = None
+            self.mpc_model_type = None
+            self.mpc_correction_mode = None
 
         self.t_mhe = rospy.get_param("/mhe/t_mhe", default=0.5)
         self.n_mhe = rospy.get_param("/mhe/n_mhe", default=50)
@@ -54,11 +61,18 @@ class VisualizerWrapper:
         else:
             self.mhe_type = None
         self.mhe_use_nn = rospy.get_param("/mhe/use_nn", default=False)
-        self.mhe_model_name = rospy.get_param("/mhe/nn/model_name", default=None)
-        self.mhe_model_type = rospy.get_param("/mhe/nn/model_type", default=None)
-        self.mhe_correction_mode = rospy.get_param("/mhe/nn/correction_mode", default=None)
-        self.mhe_nn_output_features = rospy.get_param("/mhe/nn/output_features", default=None)
-        self.mhe_nn_output_idx = state_features_to_idx(self.mhe_nn_output_features)
+        if self.mhe_use_nn:
+            self.mhe_model_name = rospy.get_param("/mhe/nn/model_name", default=None)
+            self.mhe_model_type = rospy.get_param("/mhe/nn/model_type", default=None)
+            self.mhe_correction_mode = rospy.get_param("/mhe/nn/correction_mode", default=None)
+            self.mhe_nn_output_features = rospy.get_param("/mhe/nn/output_features", default=None)
+            self.mhe_nn_output_idx = state_features_to_idx(self.mhe_nn_output_features)
+        else:
+            self.mhe_model_name = None
+            self.mhe_model_type = None
+            self.mhe_correction_mode = None
+            self.mhe_nn_output_features = None
+            self.mhe_nn_output_idx = None
         # Override since K-MHE never uses NN
         if self.mhe_type == "k":
             self.mhe_use_nn = False
@@ -280,13 +294,25 @@ class VisualizerWrapper:
             "input_in": u_in,
             "w_control": self.w_control,
             "state_in_Body": state_in_B, 
+            "rmse": np.array([mpc_tracking_error])[np.newaxis]
         }
-        self.mpc_meta['rmse'] = mpc_tracking_error
         v_max = np.max(np.linalg.norm(state_in[:, 7:10], axis=1))
 
         # Save results
         mpc_dir = os.path.join(self.mpc_dir, self.ref_traj_name)
         safe_mkdir_recursive(mpc_dir)
+
+        if not self.overwrite and os.path.exists(os.path.join(mpc_dir, 'meta_data.json')):
+            with open(os.path.join(mpc_dir, 'meta_data.json'), "rb") as f:
+                existing_meta_data = json.load(f)
+            if self.mpc_meta == existing_meta_data:
+                with open(os.path.join(mpc_dir, "results.pkl"), "rb") as f:
+                    existing_data = pickle.load(f)
+                # Append data
+                mpc_dict['t'] = mpc_dict['t'] + existing_data['t'][-1] + existing_data['dt'][-1]
+                mpc_dict['t_ref'] = mpc_dict['t_ref'] + existing_data['t_ref'][-1] + existing_data['dt'][-1]
+                for key in mpc_dict.keys():
+                    mpc_dict[key] = np.vstack((existing_data[key], mpc_dict[key]))
         with open(os.path.join(mpc_dir, "results.pkl"), "wb") as f:
             pickle.dump(mpc_dict, f)
         with open(os.path.join(mpc_dir, 'meta_data.json'), "w") as f:
@@ -338,8 +364,11 @@ class VisualizerWrapper:
             a_thrust_traj = np.zeros((len(self.x_est), 3))
             a_meas_no_g = np.zeros((len(self.x_est), 3))
             rospy.loginfo("Filling in MHE dataset and saving...")
-            for i in tqdm(range(self.seq_len*2)):
-                u = self.motor_thrusts[i]
+            # TODO: Compute it at 50Hz rather than 100Hz? 
+            # if self.motor_thrusts[i] == self.motor_thrusts[i+1]
+            #   use self.x_est[i+1], self.y_noisy[i+1]
+            for i in tqdm(range(1, self.seq_len*2)):
+                u = self.motor_thrusts[i-1]
                 q = self.x_est[i][3:7]
                 q_inv = quaternion_inverse(q)
                 q_act_inv = quaternion_inverse(self.x_act[i][3:7])
@@ -368,6 +397,19 @@ class VisualizerWrapper:
                 # MHE Model Error
                 a_error = np.concatenate((np.zeros((1, 7)), a_meas - a_est_b, np.zeros((1, 3))), axis=None)
                 mhe_error[i] = a_error
+            std_dev_x = np.std(self.y_noisy[:, 0])
+            std_dev_y = np.std(self.y_noisy[:, 1])
+            std_dev_z = np.std(self.y_noisy[:, 2])
+            std_dev_wx = np.std(self.y_noisy[:, 3])
+            std_dev_wy = np.std(self.y_noisy[:, 4])
+            std_dev_wz = np.std(self.y_noisy[:, 5])
+            std_dev_ax = np.std(self.y_noisy[:, 6])
+            std_dev_ay = np.std(self.y_noisy[:, 7])
+            std_dev_az = np.std(self.y_noisy[:, 8])
+
+            print(f"Standard deviation of the Position: {std_dev_x}, {std_dev_y}, {std_dev_z}")
+            print(f"Standard deviation of the Angular: {std_dev_wx}, {std_dev_wy}, {std_dev_wz}")
+            print(f"Standard deviation of the Acceleration: {std_dev_ax}, {std_dev_ay}, {std_dev_az}")
 
             # Compute MHE Estimation Error
             mhe_p_error = rmse(self.t_act, self.x_act[:, :3], self.t_est, self.x_est[:, :3])
@@ -375,7 +417,7 @@ class VisualizerWrapper:
             mhe_v_error = rmse(self.t_act, self.x_act[:, 7:10], self.t_est, self.x_est[:, 7:10])
             # Organize arrays to dictionary
             mhe_dict = {
-                "t": self.t_imu,
+                "t": self.t_imu[:, np.newaxis],
                 "x_est": self.x_est,
                 "x_act": self.x_act,
                 "sensor_meas": self.y_noisy,
@@ -383,12 +425,31 @@ class VisualizerWrapper:
                 "error": mhe_error,
                 "a_est_b": a_est_b_traj,
                 "accel_est": self.accel_est,
+                "p_rmse": np.array(mhe_p_error)[np.newaxis],
+                "q_rmse": np.array(mhe_q_error)[np.newaxis],
+                "v_rmse": np.array(mhe_v_error)[np.newaxis],
             } 
-            self.mhe_meta['p_rmse'] = mhe_p_error
-            self.mhe_meta['q_rmse'] = mhe_q_error
-            self.mhe_meta['v_rmse'] = mhe_v_error
+
             # Save results
             mhe_dir = os.path.join(self.mhe_dir, self.ref_traj_name)
+            if not self.overwrite and os.path.exists(os.path.join(mhe_dir, 'meta_data.json')):
+                with open(os.path.join(mhe_dir, 'meta_data.json'), "rb") as f:
+                    existing_meta_data = json.load(f)
+                print(self.mhe_meta == existing_meta_data)
+                print(self.mhe_meta)
+                print(existing_meta_data)
+                if self.mhe_meta == existing_meta_data:
+                    with open(os.path.join(mhe_dir, "results.pkl"), "rb") as f:
+                        existing_data = pickle.load(f)
+                    # Append data
+                    mhe_dict['t'] = mhe_dict['t'] + existing_data['t'][-1] + (existing_data['t'][-1] - existing_data['t'][-2])
+                    for key in mhe_dict.keys():
+                        print(key)
+                        print(mhe_dict[key].shape)
+                        mhe_dict[key] = np.vstack((existing_data[key], mhe_dict[key]))
+                        print(mhe_dict[key].shape)
+                        print("-----")
+                        
             safe_mkdir_recursive(mhe_dir)
             with open(os.path.join(mhe_dir, "results.pkl"), "wb") as f:
                 pickle.dump(mhe_dict, f)
@@ -539,7 +600,7 @@ class VisualizerWrapper:
 
         # Save reference trajectory, relative times and inputs
         self.x_ref = np.array(msg.trajectory).reshape(self.seq_len, -1)
-        self.t_ref = np.array(msg.dt)
+        self.t_ref = np.array(msg.dt)[:, np.newaxis]
         self.u_ref = np.array(msg.inputs).reshape(self.seq_len, -1)
 
     def control_callback(self, msg):
@@ -623,10 +684,14 @@ class VisualizerWrapper:
         mpc_use_nn = rospy.get_param("/mpc/use_nn", default=None)
         if mpc_use_nn is not None and self.mpc_use_nn != mpc_use_nn:
             self.mpc_use_nn = mpc_use_nn
-            self.mpc_model_name = rospy.get_param("/mpc/model_name", default=None)
-            self.mpc_model_type = rospy.get_param("/mpc/model_type", default=None)
-            self.mpc_correction_mode = rospy.get_param("/mpc/correction_mode", default=None)
-
+            if self.mpc_use_nn:
+                self.mpc_model_name = rospy.get_param("/mpc/model_name", default=None)
+                self.mpc_model_type = rospy.get_param("/mpc/model_type", default=None)
+                self.mpc_correction_mode = rospy.get_param("/mpc/correction_mode", default=None)
+            else:
+                self.mpc_model_name = None
+                self.mpc_model_type = None
+                self.mpc_correction_mode = None
             rospy.loginfo("MPC w/%s"% ("OUT NN" if not self.mpc_use_nn else " %s %s"%(self.mpc_model_type.upper(), self.mpc_correction_mode)))
             if self.mpc_use_nn:
                 use_nn_str = "_%s_%s"%(self.mpc_model_type,

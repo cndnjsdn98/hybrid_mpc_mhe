@@ -327,6 +327,24 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
     plt.close(fig)
 
     fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
+    xb_est = world_to_body_velocity_mapping(x_est)
+    xb_act = world_to_body_velocity_mapping(x_act)
+    for i in range(3):
+        ax[i].plot(t_est, xb_est[:n_test, i+7], label="estimated", zorder=3)
+        ax[i].plot(t_act, xb_act[:n_tact, i+7], label="actual", zorder=2)
+        tit = 'v_' + labels[i] + ' estimation error'
+        ax[i].set_ylabel(tit)
+        ax[i].legend()
+        ax[i].grid()
+    ax[0].set_title(r'$p\:[m]$')
+    ax[2].set_xlabel(r'$t [s]$')
+    plt.tight_layout()
+    fig.savefig(img_save_dir + '/velocity_Body_state_estimation.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                orientation='portrait', format=file_type,
+                transparent=False, bbox_inches=None, metadata=None)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
     for i in range(3):
         ax[i].plot(t_est, x_est[:n_test, i+10], label="estimated", zorder=3)
         ax[i].plot(t_act, x_act[:n_tact, i+10], label="actual", zorder=2)
@@ -548,6 +566,30 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
                         orientation='portrait', format=file_type,
                         transparent=False, bbox_inches=None, metadata=None)
             plt.close(fig)   
+            n_corr = min(n_tmeas, n_test)
+            if n_tmeas < n_test:
+                t_corr = t_meas
+            else: 
+                t_corr = t_est
+            corr_a_thrust = a_thrust[:n_corr] + model_corr[:n_corr, feature_idx:feature_idx+3]
+            if a_thrust is not None:
+                fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
+                for i in range(3):
+                    p1, = ax[i].plot(t_meas, y_measured[:n_tmeas, i+6], label='gt', color='C1', zorder=2)
+                    p3, = ax[i].plot(t_meas, y_measured_noisy[:n_tmeas, i+6], label='measured', color='C2', zorder=1, alpha=0.5)
+                    p2, = ax[i].plot(t_corr, corr_a_thrust[:n_tmeas, i], label='thrust command', color='C0', zorder=3)
+                    tit = 'a_' + labels[i] + ' measurement'
+                    ax[i].legend()
+                    ax[i].set_ylabel(tit)
+                    ax[i].grid()
+                ax[0].set_title(r'$a\:[m/s^2]$')
+                ax[2].set_xlabel(r'$t [s]$')
+                plt.tight_layout()
+                fig.savefig(img_save_dir + '/corrected_thrust_estimation.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                            orientation='portrait', format=file_type,
+                            transparent=False, bbox_inches=None, metadata=None)
+                plt.close(fig)
+
             feature_idx += 3
         if 'w' in model_corr_features:
             fig, ax = plt.subplots(3, 1, figsize=(13, 14))

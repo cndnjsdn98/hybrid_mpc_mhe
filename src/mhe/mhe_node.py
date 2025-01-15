@@ -158,7 +158,7 @@ class MHENode:
         self.t_mhe = rospy.get_param("~t_mhe", default=0.5)
         
         # Load NN models
-        if (self.use_nn):
+        if (self.use_nn and self.mhe_type == "d"):
             self.model_name = rospy.get_param("~nn/model_name", default=None)
             self.model_type = rospy.get_param("~nn/model_type", default=None).lower()
             self.input_features = rospy.get_param("~nn/input_features", default=None)
@@ -178,6 +178,7 @@ class MHENode:
                 'nn_model': self.nn_model,
             }
             self.nn_corr = None
+            self.nn_corr_last = np.zeros(len(self.nn_output_idx))
         else:
             self.nn_params = {}
 
@@ -281,7 +282,11 @@ class MHENode:
                 # Compute model error using NN model
                 y = np.hstack((self.p, self.r, self.a))
                 self.nn_corr = self.nn_model(y[self.nn_input_idx])
-                self.y = np.hstack((self.p, self.r, self.nn_corr))
+                if self.y_history_filled:
+                    self.y_hist[-1, -len(self.nn_output_idx):] = self.nn_corr
+                self.y = np.hstack((self.p, self.r, np.zeros_like(self.nn_corr)))
+                # self.y = np.hstack((self.p, self.r, self.nn_corr_last))
+                # self.nn_corr_last = self.nn_model(y[self.nn_input_idx])
             elif self.correction_mode == "online":
                 # TODO: it may not always be this 
                 self.y = np.hstack((self.p, self.r, self.a))
@@ -388,6 +393,7 @@ class MHENode:
                 idx += 4
             if 'v' in self.output_features:
                 correction_msg.velocity = Vector3(*self.x_est[idx:idx+3])
+                # correction_msg.velocity = Vector3(*self.nn_corr_last)
                 idx += 3
             if 'w' in self.output_features:
                 correction_msg.angular_velocity = Vector3(*self.x_est[idx:idx+3])

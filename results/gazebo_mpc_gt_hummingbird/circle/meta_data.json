@@ -8,5 +8,5 @@
     "model_type": "gp",
     "model_name": "gz_v_v_20_mpc",
     "correction_mode": "offline",
-    "rmse": 0.4592621349794405
+    "rmse": 0.4592707550914458
 }

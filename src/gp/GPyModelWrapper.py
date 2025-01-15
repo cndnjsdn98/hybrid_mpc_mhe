@@ -65,7 +65,7 @@ class GPyModelWrapper(torch.nn.Module):
             self.likelihood = None
 
     def train(self, train_x, train_y, train_iter, 
-              induce_num=None, induce_points=None,
+              induce_num=None, induce_points=None, lrate=0.1,
               verbose=0, script_model=False):
         """
         Trains the GPy Model with the given input training dataset.
@@ -97,6 +97,7 @@ class GPyModelWrapper(torch.nn.Module):
         self.train_and_save_Approx_model(train_x, train_y, train_iter,
                                             induce_num=induce_num, 
                                             induce_points=induce_points, 
+                                            lrate=lrate,
                                             verbose=verbose, script_model=script_model)
         self.machine = 1
 
@@ -230,7 +231,7 @@ class GPyModelWrapper(torch.nn.Module):
     def train_approximate_model(self, train_x, train_y, 
                                 induce_num, train_iter, 
                                 inducing_points=None,
-                                verbose=0):
+                                verbose=0, lrate=0.1):
         """
         Takes in training data and training parameters and trains an approximate GPy Model.
         Returns GPy model and its likelihood 
@@ -253,7 +254,7 @@ class GPyModelWrapper(torch.nn.Module):
         
         # Set up Optimizer and objective function
         objective_function = gpytorch.mlls.PredictiveLogLikelihood(likelihood, model, num_data = train_y.numel())
-        optimizer = torch.optim.Adam(list(model.parameters()) + list(likelihood.parameters()), lr=0.1)
+        optimizer = torch.optim.Adam(list(model.parameters()) + list(likelihood.parameters()), lr=lrate)
 
         # Train
         model.train()
@@ -270,8 +271,9 @@ class GPyModelWrapper(torch.nn.Module):
         likelihood.eval()
         return model, likelihood
 
-    def train_and_save_Approx_model(self, train_x, train_y, train_iter,
-                                    induce_num=20, induce_points=None, verbose=0, script_model=False):
+    def train_and_save_Approx_model(self, train_x, train_y, train_iter, 
+                                    induce_num=20, induce_points=None, lrate=0.1,
+                                    verbose=0, script_model=False):
         """
         Trains Approx GPy Model. If the induce_num is not given then it induces with
         20 points, and if the induce_num is given then it trains an
@@ -302,6 +304,7 @@ class GPyModelWrapper(torch.nn.Module):
                 print("########## BEGIN TRAINING idx {} ##########".format(x_feature))
             model, likelihood = self.train_approximate_model(train_x[:, i], train_y[:, i], induce_num, 
                                 train_iter, inducing_points=induce_points[:, i] if induce_points is not None else None,
+                                lrate=lrate,
                                 verbose=verbose)
             model_dict[x_feature] = model
             likelihood_dict[x_feature] = likelihood

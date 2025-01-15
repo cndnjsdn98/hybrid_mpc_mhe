@@ -40,16 +40,22 @@
 
 # Noise Level III ------------
 # MHE System Noise Weight
-cost/w_p: 0.0175
+# cost/w_p: 0.0175
+# cost/w_q: 0.001
+# cost/w_v: 0.0175
+# cost/w_r: 0.3
+# cost/w_d: 0.01
+
+cost/w_p: 0.01
 cost/w_q: 0.001
-cost/w_v: 0.0175
+cost/w_v: 0.02
 cost/w_r: 0.3
-cost/w_d: 0.01
+cost/w_d: 1
 # MHE Measurement Noise
 cost/v_p: 1
 cost/v_r: 0.03
 cost/v_a: 0.3
-cost/v_d: 0.001
+cost/v_d: 0.05
 
 # NN Model ------------------
 nn/input_features: "a"
@@ -57,3 +63,7 @@ nn/output_features: "v"
 nn/model_name: "gz_a_v_20_mhe"
 nn/model_type: "gp"
 nn/correction_mode: "offline"
+
+# MHE: p Estimation RMSE: 0.49882 m
+# MHE: q Estimation RMSE: 0.20162 deg
+# MHE: v Estimation RMSE: 0.79255 m/s
