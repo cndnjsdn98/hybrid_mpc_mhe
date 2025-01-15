@@ -10,9 +10,9 @@ from src.gp.GPyModelWrapper import GPyModelWrapper
 from src.gp.gp_utils import *
 from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 from src.gp.GPDataset import GPDataset
-from src.utils.utils import features_to_idx
+from src.utils.utils import state_features_to_idx, sensor_features_to_idx
 
-def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, output_feature, n_induce=None, verbose=0,keep_train_data=False):
+def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, output_feature, lrate=0.1, n_induce=None, verbose=0,keep_train_data=False):
     """
     Train GP models for MPC model compensation. The trained GP model provides acceleration corrections to the dynamic model for
     improved accuracy of model prediction. 
@@ -41,8 +41,8 @@ def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, outp
     # Load Dataset
     flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
     results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
-    x_features_idx = features_to_idx(input_feature)
-    y_features_idx = features_to_idx(output_feature)
+    x_features_idx = state_features_to_idx(input_feature)
+    y_features_idx = state_features_to_idx(output_feature)
     gp_ds = GPDataset(results_dir)
 
     # Select data points to be used
@@ -62,7 +62,7 @@ def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, outp
                                     n_induce)
     gp_model = GPyModelWrapper(model_name, load=load_model, x_features=x_features_idx, y_features=y_features_idx, keep_train_data=keep_train_data)
     if not load_model:
-        gp_model.train(x_train, y_train, epoch, induce_num=n_induce, verbose=verbose, script_model=False)
+        gp_model.train(x_train, y_train, epoch, induce_num=n_induce, verbose=verbose, script_model=False, lrate=lrate)
 
     x, y = gp_ds.get_train_ds()
     x = torch.Tensor(x[:, x_features_idx])
@@ -71,7 +71,7 @@ def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, outp
             
     return gp_model
 
-def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_feature, n_induce=None, verbose=0, keep_train_data=False):
+def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_feature, lrate=0.1, n_induce=None, verbose=0, keep_train_data=False):
     """
     Train GP models for D-MHE model compensation. The trained GP model provides acceleration corrections to the dynamic model for
     improved accuracy of model prediction. 
@@ -99,8 +99,8 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     flight_name = "%s_dmhe_%s"%(env, quad_name)
     results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
     # TODO: input feature for measurements fix
-    x_features_idx = [6, 7, 8]
-    y_features_idx = features_to_idx(output_feature)
+    x_features_idx = sensor_features_to_idx(input_feature)
+    y_features_idx = state_features_to_idx(output_feature)
     # TODO: Change to FlightDataset
     gp_ds = GPDataset(results_dir)
     
@@ -111,6 +111,7 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
         train_in, train_out = gp_ds.get_train_ds(xi, yi)
         x_train[i, :] = np.squeeze(train_in)
         y_train[i, :] = np.squeeze(train_out)
+    print(x_train.shape)
     x_train = torch.Tensor(x_train.T)
     y_train = torch.Tensor(y_train.T)
 
@@ -120,7 +121,7 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
                                     output_feature,  
                                     n_induce)
     gp_model = GPyModelWrapper(model_name, load=load_model, x_features=x_features_idx, y_features=y_features_idx, mhe=True, keep_train_data=keep_train_data)
-    gp_model.train(x_train, y_train, epoch, induce_num=n_induce, verbose=verbose, script_model=False)
+    gp_model.train(x_train, y_train, epoch, induce_num=n_induce, verbose=verbose, script_model=False, lrate=lrate)
 
     x, y = gp_ds.get_train_ds()
     x = torch.Tensor(x[:, x_features_idx])
@@ -134,12 +135,15 @@ if __name__ == "__main__":
     trajectory_name = "lemniscate"
     environment = "gazebo"
     gt = True
-    input_feature = 'v'
+    mpc_input_feature = 'v'
+    mhe_input_feature = 'a'
     output_feature = 'v'
-    mpc_epoch = 1000
-    mhe_epoch = 500
+    mpc_epoch = 500
+    mpc_lrate=0.01
+    mhe_epoch = 300
+    mhe_lrate=0.005
     n_induce = 20
-    verbose = 1
+    verbose = 5
     keep_train_data = True
     train_mpc = True
     train_mhe = True
@@ -149,9 +153,10 @@ if __name__ == "__main__":
                     environment, 
                     gt, 
                     mpc_epoch,  
-                    input_feature,
+                    mpc_input_feature,
                     output_feature,
                     n_induce=n_induce,
+                    lrate=mpc_lrate,
                     verbose=verbose,
                     keep_train_data=keep_train_data)
     if train_mhe:
@@ -159,8 +164,9 @@ if __name__ == "__main__":
                     trajectory_name,
                     environment,
                     mhe_epoch,
-                    input_feature,
+                    mhe_input_feature,
                     output_feature,
+                    lrate=mhe_lrate,
                     n_induce=n_induce,
                     verbose=verbose,
                     keep_train_data=keep_train_data)

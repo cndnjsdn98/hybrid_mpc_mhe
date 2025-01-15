@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from src.utils.utils import separate_variables, quaternion_inverse, \
                             quaternion_to_euler, unwrap, q_dot_q, v_dot_q, \
                             world_to_body_velocity_mapping
-from mpl_toolkits.mplot3d import Axes3D
 
 def trajectory_tracking_results(img_save_dir, t_ref, t_executed, x_ref, x_executed, u_ref, u_executed, mpc_error,
                                 w_control=None, legend_labels=None,
@@ -232,8 +231,9 @@ def trajectory_tracking_results(img_save_dir, t_ref, t_executed, x_ref, x_execut
 
 def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y_measured, 
                              t_meas_noisy, y_measured_noisy, mhe_error, t_acc_est=None, accel_est=None, 
-                             error_pred=None, file_type='png',
-                             show_error=False, show_dvdt=False, a_thrust=None, a_meas=None):
+                             model_corr=None, model_corr_features=[], file_type='png',
+                             show_error=False, show_dvdt=False, a_thrust=None,
+                             a_est_b=None, a_meas_b=None):
     plt.switch_backend('Agg')
     SMALL_SIZE = 14
     MEDIUM_SIZE = 18
@@ -322,6 +322,24 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
     ax[2].set_xlabel(r'$t [s]$')
     plt.tight_layout()
     fig.savefig(img_save_dir + '/velocity_state_estimation.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                orientation='portrait', format=file_type,
+                transparent=False, bbox_inches=None, metadata=None)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
+    xb_est = world_to_body_velocity_mapping(x_est)
+    xb_act = world_to_body_velocity_mapping(x_act)
+    for i in range(3):
+        ax[i].plot(t_est, xb_est[:n_test, i+7], label="estimated", zorder=3)
+        ax[i].plot(t_act, xb_act[:n_tact, i+7], label="actual", zorder=2)
+        tit = 'v_' + labels[i] + ' estimation error'
+        ax[i].set_ylabel(tit)
+        ax[i].legend()
+        ax[i].grid()
+    ax[0].set_title(r'$p\:[m]$')
+    ax[2].set_xlabel(r'$t [s]$')
+    plt.tight_layout()
+    fig.savefig(img_save_dir + '/velocity_Body_state_estimation.'+file_type, dpi=None, facecolor='w', edgecolor='w',
                 orientation='portrait', format=file_type,
                 transparent=False, bbox_inches=None, metadata=None)
     plt.close(fig)
@@ -450,13 +468,13 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
                     transparent=False, bbox_inches=None, metadata=None)
         plt.close(fig)
 
-    if a_meas is not None:
+    if a_thrust is not None:
         fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
         for i in range(3):
-            p1, = ax[i].plot(t_meas, a_meas[:n_tmeas, i], label='actual', color='C1', zorder=1)
-            p2, = ax[i].plot(t_meas, a_thrust[:n_tmeas, i], label='thrust command', color='C0', zorder=2)
+            p1, = ax[i].plot(t_meas, y_measured[:n_tmeas, i+6], label='gt', color='C1', zorder=2)
+            p3, = ax[i].plot(t_meas, y_measured_noisy[:n_tmeas, i+6], label='measured', color='C2', zorder=1, alpha=0.5)
+            p2, = ax[i].plot(t_meas, a_thrust[:n_tmeas, i], label='thrust command', color='C0', zorder=3)
             tit = 'a_' + labels[i] + ' measurement'
-            # lns = [p2, p1]
             ax[i].legend()
             ax[i].set_ylabel(tit)
             ax[i].grid()
@@ -468,36 +486,127 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
                     transparent=False, bbox_inches=None, metadata=None)
         plt.close(fig)
 
+    if a_est_b is not None and a_meas_b is not None:
+        fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
+        for i in range(3):
+            _, = ax[i].plot(t_meas, a_est_b[:n_tmeas, i], label='model', color='C0', zorder=3)
+            _, = ax[i].plot(t_meas, a_meas_b[:n_tmeas, i], label='measured', color='C1', zorder=1, alpha=0.75)
+            tit = 'a_' + labels[i] + ' measurement'
+            ax[i].legend()
+            ax[i].set_ylabel(tit)
+            ax[i].grid()
+        ax[0].set_title(r'$a\:[m/s^2]$')
+        ax[2].set_xlabel(r'$t [s]$')
+        plt.tight_layout()
+        fig.savefig(img_save_dir + '/compare_model_imu_no_gravity.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                    orientation='portrait', format=file_type,
+                    transparent=False, bbox_inches=None, metadata=None)
+        plt.close(fig)
+
     fig, ax = plt.subplots(3, 1, figsize=(13, 14))
     for i in range(3):
-        ax[i].scatter(y_measured[:, i+6], mhe_error[:, i+7])
+        ax[i].scatter(y_measured_noisy[:, i+6], mhe_error[:, i+7])
         tit = 'v_' + labels[i] + ' estimation error'
         ax[i].set_ylabel(tit)
         ax[i].grid()
-    ax[0].set_title(r'$p\:[m]$')
-    ax[2].set_xlabel(r'$t [s]$')
+    ax[0].set_title(r'model error')
+    ax[2].set_xlabel(r'$acceleration [m/s^2]$')
     plt.tight_layout()
     fig.savefig(img_save_dir + '/mhe_error_imu_meas_regression.'+file_type, dpi=None, facecolor='w', edgecolor='w',
                 orientation='portrait', format=file_type,
                 transparent=False, bbox_inches=None, metadata=None)
     plt.close(fig)   
 
-    if error_pred is not None:
-        fig, ax = plt.subplots(3, 1, figsize=(13, 14))
-        for i in range(3):
-            ax[i].plot(t_est, error_pred[:n_test, i], label="est")
-            ax[i].plot(t_act, mhe_error[:n_tact, i+7], label="act")
-            tit = 'a_' + labels[i] + ' estimated model error'
-            ax[i].set_ylabel(tit)
-            ax[i].grid()
-            ax[i].legend()
-        ax[0].set_title(r'$Estimated Model Error$')
-        ax[2].set_xlabel(r'$t [s]$')
-        plt.tight_layout()
-        fig.savefig(img_save_dir + '/estimated_model_error.'+file_type, dpi=None, facecolor='w', edgecolor='w',
-                    orientation='portrait', format=file_type,
-                    transparent=False, bbox_inches=None, metadata=None)
-        plt.close(fig)   
+    fig, ax = plt.subplots(3, 1, figsize=(13, 14))
+    for i in range(3):
+        ax[i].scatter(t_est, mhe_error[:, i+7])
+        tit = 'v_' + labels[i] + ' estimation error'
+        ax[i].set_ylabel(tit)
+        ax[i].grid()
+    ax[0].set_title(r'$p\:[m]$')
+    ax[2].set_xlabel(r'$t [s]$')
+    plt.tight_layout()
+    fig.savefig(img_save_dir + '/mhe_error.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                orientation='portrait', format=file_type,
+                transparent=False, bbox_inches=None, metadata=None)
+    plt.close(fig)   
+
+    if model_corr is not None:
+        feature_idx = 0
+        if 'q' in model_corr_features:
+            fig, ax = plt.subplots(4, 1, figsize=(13, 14))
+            for i in range(4):
+                ax[i].plot(t_est, model_corr[:n_test, i+feature_idx], label="est")
+                ax[i].plot(t_act, mhe_error[:n_tact, i+3], label="act")
+                tit = 'q_' + quart_labels[i] + ' estimated model error'
+                ax[i].set_ylabel(tit)
+                ax[i].grid()
+                ax[i].legend()
+            ax[0].set_title(r'$Estimated Model Error$')
+            ax[2].set_xlabel(r'$t [s]$')
+            plt.tight_layout()
+            fig.savefig(img_save_dir + '/q_estimated_model_error.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                        orientation='portrait', format=file_type,
+                        transparent=False, bbox_inches=None, metadata=None)
+            plt.close(fig)   
+            feature_idx += 4
+        if 'v' in model_corr_features:
+            fig, ax = plt.subplots(3, 1, figsize=(13, 14))
+            for i in range(3):
+                ax[i].plot(t_est, model_corr[:n_test, i+feature_idx], label="est", zorder=2)
+                ax[i].plot(t_act, mhe_error[:n_tact, i+7], label="act", alpha=0.6, zorder=1)
+                tit = 'v_' + labels[i] + ' estimated model error'
+                ax[i].set_ylabel(tit)
+                ax[i].grid()
+                ax[i].legend()
+            ax[0].set_title(r'$Estimated Model Error$')
+            ax[2].set_xlabel(r'$t [s]$')
+            plt.tight_layout()
+            fig.savefig(img_save_dir + '/v_estimated_model_error.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                        orientation='portrait', format=file_type,
+                        transparent=False, bbox_inches=None, metadata=None)
+            plt.close(fig)   
+            n_corr = min(n_tmeas, n_test)
+            if n_tmeas < n_test:
+                t_corr = t_meas
+            else: 
+                t_corr = t_est
+            corr_a_thrust = a_thrust[:n_corr] + model_corr[:n_corr, feature_idx:feature_idx+3]
+            if a_thrust is not None:
+                fig, ax = plt.subplots(3, 1, sharex='all', figsize=(13, 14))
+                for i in range(3):
+                    p1, = ax[i].plot(t_meas, y_measured[:n_tmeas, i+6], label='gt', color='C1', zorder=2)
+                    p3, = ax[i].plot(t_meas, y_measured_noisy[:n_tmeas, i+6], label='measured', color='C2', zorder=1, alpha=0.5)
+                    p2, = ax[i].plot(t_corr, corr_a_thrust[:n_tmeas, i], label='thrust command', color='C0', zorder=3)
+                    tit = 'a_' + labels[i] + ' measurement'
+                    ax[i].legend()
+                    ax[i].set_ylabel(tit)
+                    ax[i].grid()
+                ax[0].set_title(r'$a\:[m/s^2]$')
+                ax[2].set_xlabel(r'$t [s]$')
+                plt.tight_layout()
+                fig.savefig(img_save_dir + '/corrected_thrust_estimation.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                            orientation='portrait', format=file_type,
+                            transparent=False, bbox_inches=None, metadata=None)
+                plt.close(fig)
+
+            feature_idx += 3
+        if 'w' in model_corr_features:
+            fig, ax = plt.subplots(3, 1, figsize=(13, 14))
+            for i in range(3):
+                ax[i].plot(t_est, model_corr[:n_test, i+feature_idx], label="est")
+                ax[i].plot(t_act, mhe_error[:n_tact, i+10], label="act")
+                tit = 'w_' + labels[i] + ' estimated model error'
+                ax[i].set_ylabel(tit)
+                ax[i].grid()
+                ax[i].legend()
+            ax[0].set_title(r'$Estimated Model Error$')
+            ax[2].set_xlabel(r'$t [s]$')
+            plt.tight_layout()
+            fig.savefig(img_save_dir + '/w_estimated_model_error.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                        orientation='portrait', format=file_type,
+                        transparent=False, bbox_inches=None, metadata=None)
+            plt.close(fig)   
 
     if show_dvdt:
         p, q, v_b_executed, w = separate_variables(x_act)

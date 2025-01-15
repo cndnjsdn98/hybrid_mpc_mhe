@@ -89,11 +89,11 @@ class QuadOptimizerMPC:
             r_mpc = np.array([0.1, 0.1, 0.1, 0.1])
         if qt_factor is None:
             qt_factor = 0
-        print("\n###########################################################################################")
-        print("Q_control          = ", q_mpc)
-        print("Q_control_Terminal = ", q_mpc * qt_factor)
-        print("R_control          = ", r_mpc)
-        print("###########################################################################################\n")
+        # print("\n###########################################################################################")
+        # print("Q_control          = ", q_mpc)
+        # print("Q_control_Terminal = ", q_mpc * qt_factor)
+        # print("R_control          = ", r_mpc)
+        # print("###########################################################################################\n")
         # Add one more weight to the rotation (use quaternion norm weighting in acados)
         q_mpc = np.concatenate((q_mpc[:3], np.mean(q_mpc[3:6])[np.newaxis], q_mpc[3:]))   
 
@@ -128,7 +128,7 @@ class QuadOptimizerMPC:
         self.u = cs.vertcat(u1, u2, u3, u4)
 
         # Model Corrections using NN
-        self.param = np.array([])
+        self.param = cs.vertcat()
         if self.use_nn:
             if self.correction_mode == "offline":
                 self.nn_corr = cs.vertcat()
@@ -331,8 +331,7 @@ class QuadOptimizerMPC:
         # Set parameters for NN
         if self.use_nn:
             if self.correction_mode == "offline":
-                input = x0[self.nn_input_idx]
-                nn_corr_0 = self.nn_model.predict(input)[0]
+                nn_corr_0 = self.nn_model(x0[self.nn_input_idx])
                 self.acados_mpc_solver.set(0, 'p', nn_corr_0)
                 corr_len = nn_corr.shape[0]
                 for j in range(1, min(self.N, corr_len)):

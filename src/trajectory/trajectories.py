@@ -427,6 +427,12 @@ def lemniscate_trajectory(quad, discretization_dt, radius, z, lin_acc, clockwise
     w_vec = np.cumsum(alpha_vec) * discretization_dt
     angle_vec = np.cumsum(w_vec) * discretization_dt
 
+    if not clockwise:
+        alpha_vec *= -1
+        w_vec *= -1
+        angle_vec *= -1
+        # alpha_dt *= -1
+
     # Adaption: we achieve the highest spikes in the bodyrates when passing through the 'center' part of the figure-8
     # This leads to negative reference thrusts.
     # Let's see if we can alleviate this by adapting the z-reference in these parts to add some acceleration in the

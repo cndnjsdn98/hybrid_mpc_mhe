@@ -38,7 +38,7 @@ nn/correction_mode: "offline"
 
 # Landing options
 land_z: 0.1
-land_dz: 0.1
+land_dz: 0.5
 land_z_thr: 0.05
 
 # Approaching Init. Pos.

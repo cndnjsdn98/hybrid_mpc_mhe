@@ -15,6 +15,7 @@
 
     <!-- Start Recording node to record MPC and MHE -->
     <arg name="record" default="False"/>
+    <arg name="overwrite" default="True"/>
 
 
     <param name="environment" value="$(arg env)"/>
@@ -29,7 +30,9 @@
     </node>
 
     <group if="$(eval arg('record'))">
-        <node name="visualizer_node" pkg="hybrid_mpc_mhe" type="visualizer_node.py" output="screen"/>
+        <node name="visualizer_node" pkg="hybrid_mpc_mhe" type="visualizer_node.py" output="screen">
+            <param name="overwrite" value="$(arg overwrite)"/>
+        </node>
     </group>
 
 </launch>

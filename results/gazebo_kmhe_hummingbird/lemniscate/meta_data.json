@@ -8,7 +8,5 @@
     "model_type": null,
     "model_name": null,
     "correction_mode": null,
-    "p_rmse": 0.1835968342982101,
-    "q_rmse": 0.0004710434379109255,
-    "v_rmse": 0.2642476098026015
+    "output_features": null
 }

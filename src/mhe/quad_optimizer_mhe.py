@@ -144,16 +144,53 @@ class QuadOptimizerMHE:
             # Full measurement state vector
             self.y = cs.vertcat(self.p, self.r, self.a)
         elif self.mhe_type == "d":
-            # Full state dim remains same
-            self.state_dim = 13
-            # Control input vector
+            if self.use_nn:
+                if self.correction_mode == "offline":
+                    # 13 states + n_corr_states
+                    self.n_corr = len(self.nn_output_idx)
+                    self.state_dim = 13 + self.n_corr
+                    # Corrective states
+                    self.nn_corr_B = cs.vertcat()
+                    self.nn_corr_W = cs.vertcat()
+                    if "q" in self.output_features:
+                        self.nn_q = cs.MX.sym('nn_q', 4)
+                        self.nn_corr_B = cs.vertcat(self.nn_corr_B, self.nn_q)
+                        self.nn_corr_W = cs.vertcat(self.nn_corr_W, self.nn_q)
+                    if "v" in self.output_features:
+                        self.nn_v_b = cs.MX.sym('nn_v', 3)
+                        # Transform Velocity corrections to world frame
+                        self.nn_v_w = v_dot_q(self.nn_v_b, self.q)
+                        self.nn_corr_B = cs.vertcat(self.nn_corr_B, self.nn_v_b)
+                        self.nn_corr_W = cs.vertcat(self.nn_corr_W, self.nn_v_w)
+                    if "w" in self.output_features:
+                        self.nn_r = cs.MX.sym('nn_r', 3)
+                        self.nn_corr_B = cs.vertcat(self.nn_corr_B, self.nn_r)
+                        self.nn_corr_W = cs.vertcat(self.nn_corr_W, self.nn_r)
+                    self.nn_corr_dot = cs.MX.sym('nn_corr_dot', self.n_corr)
+                    self.w_corr = cs.MX.sym('w_corr', self.n_corr)  # Correction term disturbance
+                    self.nn_corr_init = np.zeros(self.n_corr)
+                    # New state vector
+                    self.x = cs.vertcat(self.x, self.nn_corr_B)
+                    self.x_dot = cs.vertcat(self.x_dot, self.nn_corr_dot)
+                    self.w = cs.vertcat(self.w, self.w_corr)
+                    # Input Vector
+                    self.y = cs.vertcat(self.p, self.r, self.nn_corr_B)
+                    self.B_x = np.zeros((self.state_dim, self.n_corr))
+                    for i, idx in enumerate(self.nn_output_idx):
+                        self.B_x[idx, i] = 1
+
+            else:
+                # Full state dim remains same
+                self.state_dim = 13
+                # Input Vecotr
+                self.y = cs.vertcat(self.p, self.r)
+            # Command input vector
             u1 = cs.MX.sym('u1')
             u2 = cs.MX.sym('u2')
             u3 = cs.MX.sym('u3')
             u4 = cs.MX.sym('u4')
             self.u = cs.vertcat(u1, u2, u3, u4)
-            # Full measurement state vector
-            self.y = cs.vertcat(self.p, self.r)
+            
         # Set costs for w
         self.w_cost = np.zeros((self.state_dim))
         # Params
@@ -171,11 +208,19 @@ class QuadOptimizerMHE:
             g = cs.vertcat(0.0, 0.0, 9.81)
             v_dyn = v_dot_q(self.a, self.q) - g
             a_dyn = cs.vertcat(0, 0, 0)
+            corr_dyn = cs.vertcat()
         elif self.mhe_type == "d":
             v_dyn = self.quad.v_dynamics(self.x, self.u)
             a_dyn = cs.vertcat()
+            if self.use_nn and self.correction_mode == "offline":
+                corr_dyn = np.zeros(self.n_corr)
+                # corr_dyn = cs.vertcat(0, 0, 0)
+            else:
+                corr_dyn = cs.vertcat()
         r_dyn = cs.vertcat(0, 0, 0)
-        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn) + self.w
+        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn) + self.w
+        if self.use_nn:
+            x_dot = x_dot + cs.mtimes(self.B_x, self.nn_corr_W)
         return cs.Function('x_dot_mhe', [self.x, self.u, self.w], [x_dot], ['x', 'u', 'w'], ['x_dot'])
 
     def acados_setup_model(self, nominal):
@@ -310,7 +355,9 @@ class QuadOptimizerMHE:
                 a = [0, 0, 9.81]
                 self.x0_bar = np.append(p, np.array(q + v + r + a))
             elif self.mhe_type == "d":
-                self.x0_bar = np.append(p, np.array(q + v + r))           
+                self.x0_bar = np.append(p, np.array(q + v + r))    
+                if self.use_nn:
+                    self.x0_bar = np.append(self.x0_bar, self.nn_corr_init)       
         
         # Set motor thrusts for dynamic MHE
         if self.mhe_type == "d":

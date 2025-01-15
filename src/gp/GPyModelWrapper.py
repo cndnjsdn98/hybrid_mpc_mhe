@@ -11,7 +11,7 @@ from src.gp.gpy_model import *
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
 import matplotlib.pyplot as plt
 
-class GPyModelWrapper:
+class GPyModelWrapper(torch.nn.Module):
     """
     Class for storing GPy Models, likelihood and its necessary parameters. 
     """
@@ -34,6 +34,8 @@ class GPyModelWrapper:
         :param y_features: Index of output dimension being regressed as the time-derivative.
         :type y_features: list  
         """
+        super().__init__()
+
         self.machine = 0 # 0 indicttes cpu and 1 indicates gpu
         self.model_name = model_name
         self.mhe = mhe
@@ -63,7 +65,7 @@ class GPyModelWrapper:
             self.likelihood = None
 
     def train(self, train_x, train_y, train_iter, 
-              induce_num=None, induce_points=None,
+              induce_num=None, induce_points=None, lrate=0.1,
               verbose=0, script_model=False):
         """
         Trains the GPy Model with the given input training dataset.
@@ -95,6 +97,7 @@ class GPyModelWrapper:
         self.train_and_save_Approx_model(train_x, train_y, train_iter,
                                             induce_num=induce_num, 
                                             induce_points=induce_points, 
+                                            lrate=lrate,
                                             verbose=verbose, script_model=script_model)
         self.machine = 1
 
@@ -151,10 +154,10 @@ class GPyModelWrapper:
     
         del test_x
         if skip_variance:
-            if input.ndim == 1:
-                return [mean_pred]
-            else:
-                return mean_pred
+            # if input.ndim == 1:
+            #     return [mean_pred]
+            # else:
+            return mean_pred
             
         if input.ndim == 1:
             return [cov_pred], [mean_pred]
@@ -228,7 +231,7 @@ class GPyModelWrapper:
     def train_approximate_model(self, train_x, train_y, 
                                 induce_num, train_iter, 
                                 inducing_points=None,
-                                verbose=0):
+                                verbose=0, lrate=0.1):
         """
         Takes in training data and training parameters and trains an approximate GPy Model.
         Returns GPy model and its likelihood 
@@ -251,7 +254,7 @@ class GPyModelWrapper:
         
         # Set up Optimizer and objective function
         objective_function = gpytorch.mlls.PredictiveLogLikelihood(likelihood, model, num_data = train_y.numel())
-        optimizer = torch.optim.Adam(list(model.parameters()) + list(likelihood.parameters()), lr=0.1)
+        optimizer = torch.optim.Adam(list(model.parameters()) + list(likelihood.parameters()), lr=lrate)
 
         # Train
         model.train()
@@ -268,8 +271,9 @@ class GPyModelWrapper:
         likelihood.eval()
         return model, likelihood
 
-    def train_and_save_Approx_model(self, train_x, train_y, train_iter,
-                                    induce_num=20, induce_points=None, verbose=0, script_model=False):
+    def train_and_save_Approx_model(self, train_x, train_y, train_iter, 
+                                    induce_num=20, induce_points=None, lrate=0.1,
+                                    verbose=0, script_model=False):
         """
         Trains Approx GPy Model. If the induce_num is not given then it induces with
         20 points, and if the induce_num is given then it trains an
@@ -300,6 +304,7 @@ class GPyModelWrapper:
                 print("########## BEGIN TRAINING idx {} ##########".format(x_feature))
             model, likelihood = self.train_approximate_model(train_x[:, i], train_y[:, i], induce_num, 
                                 train_iter, inducing_points=induce_points[:, i] if induce_points is not None else None,
+                                lrate=lrate,
                                 verbose=verbose)
             model_dict[x_feature] = model
             likelihood_dict[x_feature] = likelihood
@@ -476,3 +481,5 @@ class GPyModelWrapper:
             likelihood_device[x_feature] = next(self.likelihood[x_feature].parameters()).device
         return model_device, likelihood_device
         
+    def forward(self, x):
+        return self.predict(x, skip_variance=True)

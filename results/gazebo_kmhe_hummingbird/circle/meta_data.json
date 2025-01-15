@@ -1,0 +1,15 @@
+{
+    "quad_name": "hummingbird",
+    "env": "gazebo",
+    "t_mhe": 0.5,
+    "n_mhe": 50,
+    "mhe_type": "k",
+    "use_nn": false,
+    "model_type": null,
+    "model_name": null,
+    "correction_mode": null,
+    "output_features": null,
+    "p_rmse": 0.3088715047427007,
+    "q_rmse": 0.0011177638883615444,
+    "v_rmse": 0.3513411927488926
+}

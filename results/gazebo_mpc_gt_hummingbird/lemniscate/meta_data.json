@@ -7,6 +7,5 @@
     "use_nn": false,
     "model_type": null,
     "model_name": null,
-    "correction_mode": null,
-    "rmse": 0.31684405940405586
+    "correction_mode": null
 }
