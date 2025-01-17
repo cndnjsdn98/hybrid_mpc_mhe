@@ -397,6 +397,7 @@ class VisualizerWrapper:
                 # MHE Model Error
                 a_error = np.concatenate((np.zeros((1, 7)), a_meas - a_est_b, np.zeros((1, 3))), axis=None)
                 mhe_error[i] = a_error
+            a_thrust_traj[0] = a_thrust_traj[1]
             std_dev_x = np.std(self.y_noisy[:, 0])
             std_dev_y = np.std(self.y_noisy[:, 1])
             std_dev_z = np.std(self.y_noisy[:, 2])

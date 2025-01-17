@@ -1,12 +1,12 @@
 control_freq_factor: 5
 
 # Topic Names
-imu_topic: "/hummingbird/imu"
+imu_topic: "/hummingbird/ground_truth/imu"
 pose_topic: "/hummingbird/ground_truth/pose"
 control_topic: "/hummingbird/autopilot/control_command_input"
 
 # Simulate Sensor Noise Levels
-sensor_noise: False
+sensor_noise: True
 # # Noise Level I ------------------
 # p_noise_std: 0.007
 # r_noise_std: 0.007
@@ -16,6 +16,11 @@ sensor_noise: False
 # r_noise_std: 0.015
 # a_noise_std: 0.01
 # # Noise Level III ----------------
+# p_noise_std: 1
+# r_noise_std: 0.03
+# a_noise_std: 0.1
+
+# Noise Level IMU
 p_noise_std: 1
-r_noise_std: 0.03
-a_noise_std: 0.1
+r_noise_std: 0.003
+a_noise_std: 0.05
