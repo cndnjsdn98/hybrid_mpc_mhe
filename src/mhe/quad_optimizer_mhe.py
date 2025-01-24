@@ -29,7 +29,7 @@ class QuadOptimizerMHE:
     def __init__(self, quad:Quadrotor, t_mhe=0.5, n_mhe=50, 
                  mhe_type="k",
                  q_mhe=None, q0_factor=None, r_mhe=None, 
-                 use_nn=False, nn_params={}):
+                 use_nn=False, nn_params={}, payload=False):
         """
         :param quad: quadrotor object.
         :type quad: Quadrotor3D
@@ -51,7 +51,8 @@ class QuadOptimizerMHE:
         self.mhe_type = mhe_type 
         # Quad
         self.quad = quad
-
+        # Unknown Payload Mass Estimation
+        self.payload = payload 
         # Use Data Driven (Neural Network) models
         self.use_nn = use_nn
         self.nn_params = nn_params
@@ -178,12 +179,29 @@ class QuadOptimizerMHE:
                     self.B_x = np.zeros((self.state_dim, self.n_corr))
                     for i, idx in enumerate(self.nn_output_idx):
                         self.B_x[idx, i] = 1
-
             else:
                 # Full state dim remains same
                 self.state_dim = 13
                 # Input Vecotr
                 self.y = cs.vertcat(self.p, self.r)
+
+            # Parameter Estimation of unknown payload mass
+            if self.payload:
+                # Parameter for payload mass
+                self.m = cs.MX.sym('m') # payload mass
+                self.m_dot = cs.MX.sym('m_dot')
+                self.w_m = cs.MX.sym('w_m')
+                # Include new state to system states
+                self.x = cs.vertcat(self.x, self.m)
+                self.x_dot = cs.vertcat(self.x_dot, self.m_dot)
+                self.w = cs.vertcat(self.w, self.w_m)
+                if self.use_nn and self.correction_mode == "offline":
+                    self.B_x = np.append(self.B_x, np.zeros((1, self.n_corr)), axis=0)
+                # Number of States increase
+                self.payload_mass_idx = self.state_dim
+                self.state_dim += 1
+                self.init_payload_mass = 0
+
             # Command input vector
             u1 = cs.MX.sym('u1')
             u2 = cs.MX.sym('u2')
@@ -193,8 +211,6 @@ class QuadOptimizerMHE:
             
         # Set costs for w
         self.w_cost = np.zeros((self.state_dim))
-        # Params
-        self.param = np.array([])
 
     def quad_dynamics(self):
         """
@@ -210,7 +226,7 @@ class QuadOptimizerMHE:
             a_dyn = cs.vertcat(0, 0, 0)
             corr_dyn = cs.vertcat()
         elif self.mhe_type == "d":
-            v_dyn = self.quad.v_dynamics(self.x, self.u)
+            v_dyn = self.quad.v_dynamics(self.x, self.u, payload=self.m if self.payload else None)
             a_dyn = cs.vertcat()
             if self.use_nn and self.correction_mode == "offline":
                 corr_dyn = np.zeros(self.n_corr)
@@ -218,7 +234,13 @@ class QuadOptimizerMHE:
             else:
                 corr_dyn = cs.vertcat()
         r_dyn = cs.vertcat(0, 0, 0)
-        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn) + self.w
+        if self.payload and self.mhe_type == "d":
+            m_dyn = cs.vertcat(0)
+        else:
+            m_dyn = cs.vertcat()
+
+        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn, m_dyn) + self.w
+        
         if self.use_nn:
             x_dot = x_dot + cs.mtimes(self.B_x, self.nn_corr_W)
         return cs.Function('x_dot_mhe', [self.x, self.u, self.w], [x_dot], ['x', 'u', 'w'], ['x_dot'])
@@ -323,7 +345,10 @@ class QuadOptimizerMHE:
         # ocp_mhe.constraints.nh = 1
         # ocp_mhe.constraints.lh = np.array([1 - eps])
         # ocp_mhe.constraints.uh = np.array([1 + eps])
-        
+        if self.payload and self.mhe_type == "d":
+            ocp_mhe.constraints.lbx = np.array([0])
+            ocp_mhe.constraints.ubx = np.array([15])
+            ocp_mhe.constraints.idxbx = np.array([self.state_dim-1])
         # Solver options
         ocp_mhe.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         ocp_mhe.solver_options.hessian_approx = 'GAUSS_NEWTON'
@@ -358,6 +383,8 @@ class QuadOptimizerMHE:
                 self.x0_bar = np.append(p, np.array(q + v + r))    
                 if self.use_nn:
                     self.x0_bar = np.append(self.x0_bar, self.nn_corr_init)       
+                if self.payload:
+                    self.x0_bar = np.append(self.x0_bar, self.init_payload_mass)
         
         # Set motor thrusts for dynamic MHE
         if self.mhe_type == "d":
@@ -385,17 +412,17 @@ class QuadOptimizerMHE:
             self.x_est = self.acados_mhe_solver.get(self.N, "x") 
             self.x0_bar = self.acados_mhe_solver.get(1, "x")
 
-        self.qp_iter = self.acados_mhe_solver.get_stats('qp_iter')
-        self.sqp_iter = self.acados_mhe_solver.get_stats('sqp_iter')
-        self.opt_dt = self.acados_mhe_solver.get_stats('time_tot')[0]
+            self.qp_iter = self.acados_mhe_solver.get_stats('qp_iter')
+            self.sqp_iter = self.acados_mhe_solver.get_stats('sqp_iter')
+            self.opt_dt = self.acados_mhe_solver.get_stats('time_tot')[0]
 
         return status
 
     def get_state_est(self):
         return self.x_est[:self.state_dim]
 
-    def get_param_est(self):
-        return self.x_est[self.state_dim:]
+    def get_mass_est(self):
+        return self.x0_bar[-1]
     
     def get_opt_dt(self):
         return self.opt_dt

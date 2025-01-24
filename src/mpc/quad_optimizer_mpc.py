@@ -29,7 +29,8 @@ class QuadOptimizerMPC:
     def __init__(self, quad:Quadrotor, t_mpc=1, n_mpc=10, 
                  q_mpc=None, qt_factor=None,r_mpc=None, 
                  solver_options=None, 
-                 use_nn=False, nn_params={}):
+                 use_nn=False, nn_params={},
+                 payload=False):
         """
         :param quad: quadrotor object
         :type quad: Quadrotor3D
@@ -49,6 +50,8 @@ class QuadOptimizerMPC:
         self.quad = quad
         self.max_u = quad.max_input_value
         self.min_u = quad.min_input_value
+        # Unknown Payload Mass Parameter
+        self.payload = payload
         
         # Use Data Driven (Neural Network) models
         self.use_nn = use_nn
@@ -76,11 +79,18 @@ class QuadOptimizerMPC:
         self.acados_models_dir = DirConfig.ACADOS_MODEL_DIR
 
         # Nominal model equations symbolic function (no NN)
-        self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u, [])
+        if self.payload:
+            self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u, payload=self.payload_m)
+        else:
+            self.quad_xdot_nominal = self.quad.dynamics(self.x, self.u)
 
         # Build full model for MPC. Will have 13 variables.
-        acados_model, dynamics = self.acados_setup_model(
-            self.quad_xdot_nominal(x=self.x, u=self.u, p=[])['x_dot'])
+        if self.payload:
+            acados_model, dynamics = self.acados_setup_model(
+                self.quad_xdot_nominal(x=self.x, u=self.u, p=self.payload_m)['x_dot'])
+        else:
+            acados_model, dynamics = self.acados_setup_model(
+                self.quad_xdot_nominal(x=self.x, u=self.u)['x_dot'])
         
         # Weighted squared error loss function q = (p_xyz, a_xyz, v_xyz, r_xyz), r = (u1, u2, u3, u4)
         if q_mpc is None:
@@ -127,8 +137,15 @@ class QuadOptimizerMPC:
         u4 = cs.MX.sym('u4')
         self.u = cs.vertcat(u1, u2, u3, u4)
 
-        # Model Corrections using NN
+        # Model Params
         self.param = cs.vertcat()
+
+        # Payload Mass
+        if self.payload:
+            self.payload_m = cs.MX.sym('payload_m')
+            self.param = cs.vertcat(self.param, self.payload_m)
+
+        # Model Corrections using NN
         if self.use_nn:
             if self.correction_mode == "offline":
                 self.nn_corr = cs.vertcat()
@@ -307,7 +324,7 @@ class QuadOptimizerMPC:
         # the last MPC node has only a state reference but no input reference
         self.acados_mpc_solver.set(self.N, "yref", x_ref[-1, :]) 
 
-    def solve_mpc(self, x0=None, u0=None, nn_corr=None):
+    def solve_mpc(self, x0=None, u0=None, nn_corr=None, payload_m=None):
         """
         Optimizes a trajectory to reach the pre-set target state, starting from the input initial state, that minimizes
         the quadratic cost function and respects the constraints of the system
@@ -328,27 +345,45 @@ class QuadOptimizerMPC:
         self.acados_mpc_solver.set(0, 'lbx', x0)
         self.acados_mpc_solver.set(0, 'ubx', x0)
 
-        # Set parameters for NN
+        # Set parameters for MPC --------
+        # Payload
+        if self.payload and payload_m is not None:
+            params = np.array((payload_m))
+        elif self.payload and payload_m is None:
+            params = np.array((0))
+        else:
+            params = np.array(())
+        # NN Correction
         if self.use_nn:
             if self.correction_mode == "offline":
                 nn_corr_0 = self.nn_model(x0[self.nn_input_idx])
-                self.acados_mpc_solver.set(0, 'p', nn_corr_0)
+                self.acados_mpc_solver.set(0, 'p', np.hstack((params, nn_corr_0)))
                 corr_len = nn_corr.shape[0]
+                params = np.tile(params, (corr_len, 1))
+                params = np.hstack((params, nn_corr))
                 for j in range(1, min(self.N, corr_len)):
-                    self.acados_mpc_solver.set(j, 'p', nn_corr[j])
+                    self.acados_mpc_solver.set(j, 'p', params[j])
                 for j in range(corr_len, self.N):
-                    self.acados_mpc_solver.set(j, 'p', nn_corr[-1])
+                    self.acados_mpc_solver.set(j, 'p', params[-1])
             elif self.correction_mode == "online":
+                # TODO: Figure out how to handle parameters for online correction
                 input = x0[self.nn_input_idx]
                 if 'u' in self.input_features:
-                    param = np.array((input, u0, 1))
+                    param_0 = np.array((input, u0, 1))
                 else:
-                    param = np.array((input, 1))
-                self.acados_mpc_solver.set(0, 'p', param)
-                param = np.zeros_like(param)
+                    param_0 = np.array((input, 1))
+                self.acados_mpc_solver.set(0, 'p', np.hstack((params, param_0)))
+                # If its online correction the input parameters after the first node 
+                # isn't used so the same params can be input with no consequences
                 for j in range(1, self.N):
-                    self.acados_mpc_solver.set(j, 'p', param)
-
+                    self.acados_mpc_solver.set(j, 'p',  np.hstack((params, param_0)))
+                # param_j = np.zeros_like(param_0)
+                # for j in range(1, self.N):
+                #     self.acados_mpc_solver.set(j, 'p',  np.hstack((params, param_j)))
+        elif self.payload:
+            for j in range(self.N):
+                self.acados_mpc_solver.set(j, 'p', payload_m)
+            
         # Solve MPC
         status = self.acados_mpc_solver.solve()
         

@@ -10,7 +10,7 @@ import pickle
 import json
 import time
 
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 from mav_msgs.msg import Actuators
 from mavros_msgs.msg import AttitudeTarget
 from nav_msgs.msg import Odometry
@@ -37,6 +37,9 @@ class VisualizerWrapper:
         self.quad = Quadrotor(self.quad_name, prop=True)
 
         self.overwrite = rospy.get_param("~overwrite", default=False)
+
+        self.payload_m = rospy.get_param("/payload_mass", default=0)
+        self.payload = True if self.payload_m > 0 else False
 
         self.t_mpc = rospy.get_param("/mpc/t_mpc", default=1)
         self.n_mpc = rospy.get_param("/mpc/n_mpc", default=10)
@@ -90,6 +93,7 @@ class VisualizerWrapper:
             'model_type': self.mpc_model_type,
             'model_name': self.mpc_model_name,
             'correction_mode': self.mpc_correction_mode,
+            'payload_m': self.payload_m
         }
         self.mhe_meta = {
             'quad_name': self.quad_name,
@@ -102,6 +106,7 @@ class VisualizerWrapper:
             'model_name': self.mhe_model_name,
             'correction_mode': self.mhe_correction_mode,
             'output_features': self.mhe_nn_output_features,
+            'payload_m': self.payload_m
         }
         # Create MPC Directory
         if self.mpc_use_nn:
@@ -109,13 +114,14 @@ class VisualizerWrapper:
                                     self.mpc_correction_mode)
         else:
             use_nn_str = ""
-        self.mpc_dataset_name = "%s_mpc_%s%s%s"%(self.env, 
-                                                 "gt_" if self.use_groundtruth else "", 
-                                                 self.quad_name,
-                                                 use_nn_str)
+        self.mpc_dataset_name = "%s_%smpc_%s%s%s"%(self.env, 
+                                                    "pm_" if self.payload else "",
+                                                    "gt_" if self.use_groundtruth else "", 
+                                                    self.quad_name,
+                                                    use_nn_str)
         self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
         safe_mkdir_recursive(self.mpc_dir)
-        rospy.loginfo("MHE: %s"%self.mpc_dataset_name)
+        rospy.loginfo("MPC: %s"%self.mpc_dataset_name)
 
         # Create MHE Directory if MHE Type is given
         # else check every second
@@ -125,19 +131,26 @@ class VisualizerWrapper:
                                         self.mhe_correction_mode)
             else:
                 use_nn_str = ""
-            self.mhe_dataset_name = "%s_%smhe_%s%s"%(self.env, 
-                                                   self.mhe_type, 
-                                                   self.quad_name,
-                                                   use_nn_str)
+            self.mhe_dataset_name = "%s_%s%smhe_%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        self.mhe_type, 
+                                                        self.quad_name,
+                                                        use_nn_str)
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
             safe_mkdir_recursive(self.mhe_dir)
             rospy.loginfo("MHE: %s"%self.mhe_dataset_name)
 
+        if self.payload:
+            rospy.loginfo("Payload Mass of %.1f Simulated"% (self.payload_m))
+        else:
+            rospy.loginfo("No Payload Mass")
+            
         # Check every 1 second if MPC/MHE parameters have changed
         self.timer_use_gt = rospy.Timer(rospy.Duration(1), self.check_use_gt)
         self.timer_mpc_use_nn = rospy.Timer(rospy.Duration(1), self.check_mpc_use_nn)
         self.timer_mhe_type = rospy.Timer(rospy.Duration(1), self.check_mhe_type)
         self.timer_mhe_use_nn = rospy.Timer(rospy.Duration(1), self.check_mhe_use_nn)
+        self.timer_payload = rospy.Timer(rospy.Duration(1), self.check_payload_mass)
 
         self.record = False
 
@@ -166,6 +179,8 @@ class VisualizerWrapper:
             self.mhe_model_corr = np.zeros((0, len(self.mhe_nn_output_idx)))
         else:
             self.mhe_model_corr = None
+        self.payload_mass_gt = np.zeros((0, 1))
+        self.payload_mass_est = np.zeros((0, 1))
 
         # System States
         self.p_act = None
@@ -187,6 +202,8 @@ class VisualizerWrapper:
         record_topic = rospy.get_param("/record_topic", default = "/" + self.quad_name + "/record")
         sensor_measurement_topic = rospy.get_param("/sensor_measurement_topic", default="/" + self.quad_name + "/sensor_measurement") 
         mhe_model_correction_topic = rospy.get_param("~model_correction_topic", default="/" + self.quad_name + "/mhe/model_correction")
+        quad_mass_gt_topic = rospy.get_param("/quad_mass_change_topic", default="/" + self.quad_name + "/mass_change")
+        payload_mass_est_topic  = rospy.get_param("/payload_mass_est_topic", default="/" + self.quad_name + "/payload_mass_est")
 
         # Subscribers
         self.imu_sub = rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=1, tcp_nodelay=False)
@@ -202,6 +219,8 @@ class VisualizerWrapper:
         self.record_sub = rospy.Subscriber(record_topic, Bool, self.record_callback, queue_size=1, tcp_nodelay=False)
         self.sensor_measurement_sub = rospy.Subscriber(sensor_measurement_topic, QuadSensor, self.sensor_measurement_callback, queue_size=1, tcp_nodelay=True)
         self.mhe_model_correction_sub = rospy.Subscriber(mhe_model_correction_topic, ModelCorrection, self.mhe_model_corr_callback, queue_size=10, tcp_nodelay=True)
+        self.quad_mass_gt_sub = rospy.Subscriber(quad_mass_gt_topic, Float32, self.quad_mass_gt_callback, queue_size=10, tcp_nodelay=True)
+        self.payload_mass_est_sub = rospy.Subscriber(payload_mass_est_topic, Float32, self.payload_mass_est_callback, queue_size=10, tcp_nodelay=True)
 
         rospy.loginfo("Visualizer on standby listening...")
         rospy.loginfo("MPC w/%s"% ("OUT NN" if not self.mpc_use_nn else " %s %s"%(self.mpc_model_type.upper(), self.mpc_correction_mode)))
@@ -358,7 +377,20 @@ class VisualizerWrapper:
             if self.mhe_model_corr is not None and len(self.mhe_model_corr) > 0:
                 while len(self.mhe_model_corr) < self.seq_len * 2:
                     self.mhe_model_corr = np.append(self.mhe_model_corr, self.mhe_model_corr[-1][np.newaxis], axis=0)
-
+            if self.payload:
+                while len(self.payload_mass_gt) < self.seq_len:
+                    self.payload_mass_gt = np.append(self.payload_mass_gt, self.payload_mass_gt[-1])
+                self.payload_mass_gt = self.payload_mass_gt[:self.seq_len]
+                if len(self.payload_mass_est) > 0:
+                    while len(self.payload_mass_est) < self.seq_len * 2:
+                        self.payload_mass_est = np.append(self.payload_mass_est, self.payload_mass_est[-1])
+                    self.payload_mass_est = self.payload_mass_est[:self.seq_len * 2]
+                else:
+                    self.payload_mass_est = None
+            else:
+                self.payload_mass_gt = None
+                self.payload_mass_est = None
+                
             mhe_error = np.zeros_like(self.x_est)
             a_est_b_traj = np.zeros((len(self.x_est), 3))
             a_thrust_traj = np.zeros((len(self.x_est), 3))
@@ -374,7 +406,7 @@ class VisualizerWrapper:
                 q_act_inv = quaternion_inverse(self.x_act[i][3:7])
 
                 # Model Accel Estimation
-                a_thrust = np.array([0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.max_thrust / self.quad.mass])
+                a_thrust = np.array([0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.get_max_thrust() / self.quad.get_mass()])
                 a_thrust_traj[i] = np.squeeze(a_thrust.T)
                 g = np.array([0, 0, -9.81])
                 a_est_b = v_dot_q(v_dot_q(a_thrust, q) + g, q_inv)
@@ -472,12 +504,14 @@ class VisualizerWrapper:
                 if self.mhe_type == "k":
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
                                              self.t_sensor_measurement, self.y_noisy, mhe_error, t_acc_est=self.t_acc_est, 
-                                             accel_est=self.accel_est, file_type='png', a_est_b=a_est_b_traj, a_meas_b=a_meas_no_g)
+                                             accel_est=self.accel_est, file_type='png', a_est_b=a_est_b_traj, a_meas_b=a_meas_no_g,
+                                             payload_m_gt=self.payload_mass_gt, payload_m_est=self.payload_mass_est)
                 else:
                     state_estimation_results(mhe_dir, self.t_act, self.x_act, self.t_est, self.x_est, self.t_imu, self.y,
                                              self.t_sensor_measurement, self.y_noisy, mhe_error, a_thrust=a_thrust_traj, 
                                              model_corr=self.mhe_model_corr, model_corr_features=self.mhe_nn_output_features,
-                                             file_type='png', )
+                                             file_type='png', 
+                                             payload_m_gt=self.payload_mass_gt, payload_m_est=self.payload_mass_est)
             except Exception as e:
                 rospy.logerr(f"An error occurred while plotting state estimation results: {e}")    
         else:
@@ -509,6 +543,9 @@ class VisualizerWrapper:
             self.mhe_model_corr = np.zeros((0, len(self.mhe_nn_output_idx)))
         else:
             self.mhe_model_corr = None
+        self.payload_mass_gt = np.zeros((0, 1))
+        self.payload_mass_est = np.zeros((0, 1))
+
         # System States
         self.p_act = None
         self.q_act = None
@@ -661,6 +698,16 @@ class VisualizerWrapper:
             model_corr += [msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z]
         self.mhe_model_corr = np.append(self.mhe_model_corr, np.array(model_corr)[np.newaxis, :], axis=0)
 
+    def quad_mass_gt_callback(self, msg):
+        if not self.record:
+            return
+        self.payload_mass_gt = np.append(self.payload_mass_gt, msg.data - self.quad.get_base_mass())
+        
+    def payload_mass_est_callback(self, msg):
+        if not self.record:
+            return
+        self.payload_mass_est = np.append(self.payload_mass_est, msg.data)
+
     def check_use_gt(self, event):
         use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=None)
         if use_groundtruth is not None and self.use_groundtruth != use_groundtruth:
@@ -671,10 +718,11 @@ class VisualizerWrapper:
                                        self.mpc_correction_mode)
             else:
                 use_nn_str = ""
-            self.mpc_dataset_name = "%s_mpc_%s%s%s"%(self.env, 
-                                                     "gt_" if self.use_groundtruth else "", 
-                                                     self.quad_name,
-                                                     use_nn_str)
+            self.mpc_dataset_name = "%s_%smpc_%s%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        "gt_" if self.use_groundtruth else "", 
+                                                        self.quad_name,
+                                                        use_nn_str)
             self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
             self.mpc_meta['gt'] = use_groundtruth
             # Create Directory
@@ -699,10 +747,11 @@ class VisualizerWrapper:
                                        self.mpc_correction_mode)
             else:
                 use_nn_str = ""
-            self.mpc_dataset_name = "%s_mpc_%s%s%s"%(self.env, 
-                                                     "gt_" if self.use_groundtruth else "", 
-                                                     self.quad_name,
-                                                     use_nn_str)
+            self.mpc_dataset_name = "%s_%smpc_%s%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        "gt_" if self.use_groundtruth else "", 
+                                                        self.quad_name,
+                                                        use_nn_str)
             self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
             self.mpc_meta['use_nn'] = self.mpc_use_nn
             self.mpc_meta['model_type'] = self.mpc_model_type
@@ -731,10 +780,11 @@ class VisualizerWrapper:
                                         self.mhe_correction_mode)
             else:
                 use_nn_str = ""
-            self.mhe_dataset_name = "%s_%smhe_%s%s"%(self.env, 
-                                                   self.mhe_type, 
-                                                   self.quad_name,
-                                                   use_nn_str)
+            self.mhe_dataset_name = "%s_%s%smhe_%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        self.mhe_type, 
+                                                        self.quad_name,
+                                                        use_nn_str)
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
             # Create Directory
             safe_mkdir_recursive(self.mhe_dir)
@@ -777,17 +827,53 @@ class VisualizerWrapper:
                                         self.mhe_correction_mode)
             else:
                 use_nn_str = ""
-            self.mhe_dataset_name = "%s_%smhe_%s%s"%(self.env, 
-                                                   self.mhe_type, 
-                                                   self.quad_name,
-                                                   use_nn_str)
+            self.mhe_dataset_name = "%s_%s%smhe_%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        self.mhe_type, 
+                                                        self.quad_name,
+                                                        use_nn_str)
             self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
 
             # Create Directory
             safe_mkdir_recursive(self.mhe_dir)
             rospy.loginfo("MHE: %s"%self.mhe_dataset_name)
 
+    def check_payload_mass(self, event):
 
+        payload_m = rospy.get_param("payload_mass", default=0)
+
+        if self.payload_m != payload_m:
+            self.payload_m = rospy.get_param("/payload_mass", default=0)
+            self.payload = True if self.payload_m > 0 else False
+            self.mpc_meta['payload_m'] = self.payload_m
+            self.mhe_meta['payload_m'] = self.payload_m
+            if self.payload:
+                rospy.loginfo("Payload Mass of %.1f Simulated"% (self.payload_m))
+            else:
+                rospy.loginfo("No Payload Mass")
+            if self.mpc_use_nn:
+                use_nn_str = "_%s_%s"%(self.mpc_model_type,
+                                       self.mpc_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mpc_dataset_name = "%s_%smpc_%s%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        "gt_" if self.use_groundtruth else "", 
+                                                        self.quad_name,
+                                                        use_nn_str)
+            self.mpc_dir = os.path.join(self.results_dir, self.mpc_dataset_name)
+
+            if self.mhe_use_nn:
+                use_nn_str = "_%s_%s"%(self.mhe_model_type,
+                                        self.mhe_correction_mode)
+            else:
+                use_nn_str = ""
+            self.mhe_dataset_name = "%s_%s%smhe_%s%s"%(self.env, 
+                                                        "pm_" if self.payload else "",
+                                                        self.mhe_type, 
+                                                        self.quad_name,
+                                                        use_nn_str)
+            self.mhe_dir = os.path.join(self.results_dir, self.mhe_dataset_name)
 
 def main():
     rospy.init_node("visualizer")

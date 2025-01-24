@@ -5,6 +5,9 @@ imu_topic: "/hummingbird/ground_truth/imu"
 pose_topic: "/hummingbird/ground_truth/pose"
 control_topic: "/hummingbird/autopilot/control_command_input"
 
+# Payload mass
+payload_mass: 0
+
 # Simulate Sensor Noise Levels
 sensor_noise: True
 # # Noise Level I ------------------

@@ -12,7 +12,7 @@ from src.neural_ode.NeuralODE import load_neural_ode
 from src.gp.GPyModelWrapper import GPyModelWrapper
 
 from hybrid_mpc_mhe.msg import QuadSensor, ModelCorrection
-from std_msgs.msg import Bool, Header
+from std_msgs.msg import Bool, Header, Float32
 from mav_msgs.msg import Actuators
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
@@ -71,6 +71,8 @@ class MHENode:
         self.env = rospy.get_param("/environment", default="gazebo")
         self.quad_name = rospy.get_param("/quad_name", default=None)
         assert self.quad_name != None
+        # Load Quadrotor instance
+        self.quad = Quadrotor(self.quad_name)
 
         # Initialize State Measurement Variables
         self.p = None
@@ -115,17 +117,25 @@ class MHENode:
         self.r_noise_std = rospy.get_param("/r_noise_std", default=0)
         self.a_noise_std = rospy.get_param("/a_noise_std", default=0)
 
+        # Simulate payload mass
+        payload_mass = rospy.get_param("/payload_mass", default=0)
+        if payload_mass is None or payload_mass == 0:
+            self.payload = False
+        else:
+            self.payload = True
+
     def init_publishers(self):
         # Publisher topic names
         state_est_topic = rospy.get_param("/state_est_topic", default="/" + self.quad_name + "/state_est") 
         acceleration_est_topic = rospy.get_param("/acceleration_est_topic", default="/" + self.quad_name + "/acceleration_est") 
         sensor_measurement_topic = rospy.get_param("/sensor_measurement_topic", default="/" + self.quad_name + "/sensor_measurement") 
-
+        payload_mass_est_topic = rospy.get_param("/payload_mass_est_topic", default="/" + self.quad_name + "/payload_mass_est")
+        
         # Publishers
         self.state_est_pub = rospy.Publisher(state_est_topic, Odometry, queue_size=10, tcp_nodelay=True)
         self.acceleration_est_pub = rospy.Publisher(acceleration_est_topic, Imu, queue_size=10, tcp_nodelay=True)
         self.sensor_measurement_pub = rospy.Publisher(sensor_measurement_topic, QuadSensor, queue_size=10, tcp_nodelay=True)
-
+        self.payload_mass_est_pub = rospy.Publisher(payload_mass_est_topic, Float32, queue_size=10, tcp_nodelay=True)
         if self.use_nn and self.correction_mode == "offline":
             model_correction_topic = rospy.get_param("~model_correction_topic", default="/" + self.quad_name + "/mhe/model_correction")
             self.model_correction_pub = rospy.Publisher(model_correction_topic, ModelCorrection, queue_size=10, tcp_nodelay=True)
@@ -148,6 +158,8 @@ class MHENode:
         mhe_type = rospy.get_param("~mhe_type", default="kinematic")
         if mhe_type == "kinematic":
             self.mhe_type = "k"
+            if self.payload:
+                self.payload = False
         elif mhe_type == "dynamic":
             self.mhe_type = "d"
         else:
@@ -190,6 +202,7 @@ class MHENode:
         w_r = np.ones((1,3)) * rospy.get_param("~cost/w_r", default=0.5)
         w_a = np.ones((1,3)) * rospy.get_param("~cost/w_a", default=0.05)
         w_d = np.ones((1,3)) * rospy.get_param("~cost/w_d", default=0.00001)
+        w_m = np.ones((1,1)) * rospy.get_param("~cost/w_m", default=0.0)
         # Measurement Noise
         v_p = np.ones((1,3)) * rospy.get_param("~cost/v_p", default=0.002)
         v_r = np.ones((1,3)) * rospy.get_param("~cost/v_r", default=1e-6)
@@ -199,24 +212,31 @@ class MHENode:
         q0_factor = rospy.get_param("~cost/q0_factor", default=1)
 
         if self.mhe_type == "k":
-            q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_a))**2)
-            r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_a))**2)
+            q_mhe = np.hstack((w_p, w_q, w_v, w_r, w_a))
+            r_mhe = np.hstack((v_p, v_r, v_a))
         elif self.mhe_type == "d":
             if not self.use_nn:
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r))**2)
-                r_mhe = 1/np.squeeze(np.hstack((v_p, v_r))**2)
-            if self.use_nn and self.correction_mode == "offline":
-                q_mhe = 1/np.squeeze(np.hstack((w_p, w_q, w_v, w_r, w_d))**2)
-                r_mhe = 1/np.squeeze(np.hstack((v_p, v_r, v_d))**2)
+                q_mhe = np.hstack((w_p, w_q, w_v, w_r))
+                r_mhe = np.hstack((v_p, v_r))
+            elif self.use_nn and self.correction_mode == "offline":
+                q_mhe = np.hstack((w_p, w_q, w_v, w_r, w_d))
+                r_mhe = np.hstack((v_p, v_r, v_d))
+            elif self.use_nn and self.correction_mode == "online":
+                # TODO: Set up q and r for online correction
+                q_mhe = np.hstack((w_p, w_q, w_v, w_r))
+                r_mhe = np.hstack((v_p, v_r, v_a))
+            if self.payload:
+                q_mhe = np.hstack((q_mhe, w_m))
 
-        # Load Quadrotor instance
-        self.quad = Quadrotor(self.quad_name)
+        q_mhe = 1/np.squeeze(q_mhe**2)
+        r_mhe = 1/np.squeeze(r_mhe**2)
 
         # Compile Acados Model
         self.mhe = QuadOptimizerMHE(self.quad, t_mhe=self.t_mhe, n_mhe=self.n_mhe,
                                     mhe_type=self.mhe_type,
                                     q_mhe=q_mhe, q0_factor=q0_factor, r_mhe=r_mhe,
-                                    use_nn=self.use_nn, nn_params=self.nn_params)
+                                    use_nn=self.use_nn, nn_params=self.nn_params,
+                                    payload=self.payload)
 
     def motor_thrust_callback(self, msg):
         self.u = np.array(msg.angular_velocities)
@@ -355,10 +375,12 @@ class MHENode:
             self.x_est = self.mhe.get_state_est()
             self.opt_dt += self.mhe.get_opt_dt()
             self.mhe_idx += 1
-
+        else:
+            rospy.logerr("MHE Optimization failed")
+        
         # Publish acceleration estimation
         if self.mhe_type == "k":
-            self.accel_est = self.x_est[-3:]
+            self.accel_est = self.x_est[13:16]
             accel_est_msg = Imu()
             accel_est_msg.header = Header()
             accel_est_msg.header.stamp = rospy.Time.now()
@@ -398,6 +420,11 @@ class MHENode:
             if 'w' in self.output_features:
                 correction_msg.angular_velocity = Vector3(*self.x_est[idx:idx+3])
             self.model_correction_pub.publish(correction_msg)
+
+        # Publish Payload Mass estimates
+        if self.payload:
+            self.payload_mass_est = self.mhe.get_mass_est()
+            self.payload_mass_est_pub.publish(Float32(self.payload_mass_est))
 
         self.mhe_seq_num += 1
 

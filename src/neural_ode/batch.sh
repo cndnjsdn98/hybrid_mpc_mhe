@@ -12,7 +12,7 @@
 #SBATCH --job-name=NODE
 #SBATCH --mail-user=w.choo@ou.edu
 #SBATCH --mail-type=ALL
-#SBATCH --chdir=/home/cs504306/hybrid_mpc_mhe/src/neural_ode/
+#SBATCH --chdir=/home/wchoo/hybrid_mpc_mhe/src/neural_ode/
 #SBATCH --array=0-2
 
 #################################################
@@ -20,8 +20,8 @@
 
 # module load Python
 module load Python/3.10.8-GCCcore-12.2.0
-source /home/cs504306/node/bin/activate
+source /home/wchoo/node/bin/activate
 
-export PYTHONPATH=/home/cs504306/hybrid_mpc_mhe/:$PYTHONPATH
+export PYTHONPATH=/home/wchoo/hybrid_mpc_mhe/:$PYTHONPATH
 
 python ./train_nn.py @data_params.txt @model_params.txt --n_threads $SLURM_CPUS_PER_TASK --exp_index $SLURM_ARRAY_TASK_ID

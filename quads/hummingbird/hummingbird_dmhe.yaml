@@ -53,11 +53,20 @@
 # cost/w_d: 1
 
 # Noise Level IMU ------------
+# Lemniscate z=0.5
+# cost/w_p: 0.01
+# cost/w_q: 0.001
+# cost/w_v: 0.025
+# cost/w_r: 0.1
+# cost/w_d: 1
+# cost/w_m: 0.009
+# Circle z=0.5
 cost/w_p: 0.01
 cost/w_q: 0.001
 cost/w_v: 0.025
 cost/w_r: 0.1
 cost/w_d: 1
+cost/w_m: 0.009
 # MHE Measurement Noise
 # cost/v_p: 1
 # cost/v_r: 0.03
@@ -72,7 +81,3 @@ nn/output_features: "v"
 nn/model_name: "gz_a_v_20_mhe"
 nn/model_type: "gp"
 nn/correction_mode: "offline"
-
-# MHE: p Estimation RMSE: 0.49882 m
-# MHE: q Estimation RMSE: 0.20162 deg
-# MHE: v Estimation RMSE: 0.79255 m/s

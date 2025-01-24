@@ -8,5 +8,6 @@
     "model_type": null,
     "model_name": null,
     "correction_mode": null,
-    "output_features": null
+    "output_features": null,
+    "payload_m": 0
 }
