@@ -9,7 +9,5 @@
     "model_name": null,
     "correction_mode": null,
     "output_features": null,
-    "p_rmse": 0.3088715047427007,
-    "q_rmse": 0.0011177638883615444,
-    "v_rmse": 0.3513411927488926
+    "payload_m": 0
 }
