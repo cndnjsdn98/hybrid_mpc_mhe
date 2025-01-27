@@ -19,7 +19,6 @@ import casadi as cs
 import numpy as np
 from scipy.linalg import block_diag
 import l4casadi as l4c
-import time
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 from src.utils.utils import v_dot_q
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
