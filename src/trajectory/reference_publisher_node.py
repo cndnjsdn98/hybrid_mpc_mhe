@@ -42,8 +42,8 @@ class ReferenceGenerator:
             v_list = [float(v.strip()) for v in v_list.split(',')]
 
         # Select if generate "random" trajectories, "hover" mode or increasing speed "circle" mode
-        mode = rospy.get_param('~trajectory', default="")
-        assert mode in ["circle", "lemniscate", "hover", "random"]
+        mode = rospy.get_param('~trajectory', default="").lower()
+        assert mode in ["circle", "lemniscate", "viviani", "hover", "random"]
         if mode != "random":
             n_seeds = 1
 
@@ -111,12 +111,33 @@ class ReferenceGenerator:
 
             elif not self.mpc_busy and mode == "lemniscate":
                 rospy.loginfo("Sending increasing speed lemniscate trajectory")
+                z_dim = 0
                 x_ref, t_ref, u_ref = lemniscate_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z, z_dim=z_dim,
                                                             lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
                                                             yawing=loop_yawing, plot=plot, environment=env)
 
                 msg = ReferenceTrajectory()
                 msg.traj_name = "lemniscate"
+                msg.v_input = loop_v_max
+                msg.seq_len = x_ref.shape[0]
+                msg.trajectory = np.reshape(x_ref, (-1,)).tolist()
+                msg.dt = t_ref.tolist()
+                msg.inputs = np.reshape(u_ref, (-1,)).tolist()
+
+                reference_pub.publish(msg)
+                curr_trajectory_ind += 1
+                self.mpc_busy = True
+            
+            elif not self.mpc_busy and mode == "viviani":
+                rospy.loginfo("Sending increasing speed Viviani trajectory")
+                if z_dim == 0:
+                    z_dim = 0.5
+                x_ref, t_ref, u_ref = lemniscate_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z, z_dim=z_dim,
+                                                            lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
+                                                            yawing=loop_yawing, plot=plot, environment=env)
+
+                msg = ReferenceTrajectory()
+                msg.traj_name = "viviani"
                 msg.v_input = loop_v_max
                 msg.seq_len = x_ref.shape[0]
                 msg.trajectory = np.reshape(x_ref, (-1,)).tolist()
