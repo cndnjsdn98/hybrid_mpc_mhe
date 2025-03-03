@@ -189,16 +189,16 @@ class QuadOptimizerMHE:
                 # Parameter for payload mass
                 self.m = cs.MX.sym('m') # payload mass
                 self.m_dot = cs.MX.sym('m_dot')
-                self.w_m = cs.MX.sym('w_m')
+                # self.w_m = cs.MX.sym('w_m')
                 # Include new state to system states
                 self.x = cs.vertcat(self.x, self.m)
                 self.x_dot = cs.vertcat(self.x_dot, self.m_dot)
-                self.w = cs.vertcat(self.w, self.w_m)
+                # self.w = cs.vertcat(self.w, self.w_m)
                 if self.use_nn and self.correction_mode == "offline":
                     self.B_x = np.append(self.B_x, np.zeros((1, self.n_corr)), axis=0)
                 # Number of States increase
                 self.payload_mass_idx = self.state_dim
-                self.state_dim += 1
+                # self.state_dim += 1
                 self.init_payload_mass = 0
 
             # Command input vector
@@ -219,6 +219,7 @@ class QuadOptimizerMHE:
         """
         p_dyn = self.quad.p_dynamics(self.x)
         q_dyn = self.quad.q_dynamics(self.x)
+        r_dyn = cs.vertcat(0, 0, 0)
         if self.mhe_type == "k":
             g = cs.vertcat(0.0, 0.0, 9.81)
             v_dyn = v_dot_q(self.a, self.q) - g
@@ -232,14 +233,12 @@ class QuadOptimizerMHE:
                 # corr_dyn = cs.vertcat(0, 0, 0)
             else:
                 corr_dyn = cs.vertcat()
-        r_dyn = cs.vertcat(0, 0, 0)
-        if self.payload and self.mhe_type == "d":
-            m_dyn = cs.vertcat(0)
-        else:
-            m_dyn = cs.vertcat()
 
-        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn, m_dyn) + self.w
-        
+        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn) + self.w
+
+        if self.payload and self.mhe_type == "d":
+            x_dot = cs.vertcat(x_dot, 0)
+
         if self.use_nn:
             x_dot = x_dot + cs.mtimes(self.B_x, self.nn_corr_W)
         return cs.Function('x_dot_mhe', [self.x, self.u, self.w], [x_dot], ['x', 'u', 'w'], ['x_dot'])
@@ -282,6 +281,8 @@ class QuadOptimizerMHE:
         """
         # Set Arrival Cost as a factor of q_cost
         q0_cost = q_cost * q0_factor
+        if self.payload:
+            q_cost = q_cost[:self.state_dim]
 
         # Number of states and Inputs of the model
         # make acceleration as error
@@ -344,10 +345,11 @@ class QuadOptimizerMHE:
         # ocp_mhe.constraints.nh = 1
         # ocp_mhe.constraints.lh = np.array([1 - eps])
         # ocp_mhe.constraints.uh = np.array([1 + eps])
+
         if self.payload and self.mhe_type == "d":
-            ocp_mhe.constraints.lbx = np.array([0])
-            ocp_mhe.constraints.ubx = np.array([15])
-            ocp_mhe.constraints.idxbx = np.array([self.state_dim-1])
+            ocp_mhe.constraints.lbx_0 = np.array([0])
+            ocp_mhe.constraints.ubx_0 = np.array([15])
+            ocp_mhe.constraints.idxbx_0 = np.array([self.payload_mass_idx])
         # Solver options
         ocp_mhe.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         ocp_mhe.solver_options.hessian_approx = 'GAUSS_NEWTON'
