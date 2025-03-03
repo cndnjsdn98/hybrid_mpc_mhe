@@ -1,6 +1,6 @@
 # Parameters for the loop and lemniscate trajectories at successively increasing speed
 loop_z: 2              # Z position of loop plane [m]
-z_dim: 0.5             # Change in Z position of loop plane [m]
+z_dim: 0.0             # Change in Z position of loop plane [m]
 loop_r: 5.0            # Radius of loop [m]
 loop_v_max: 8.0       # Maximum speed achieved (approx.) [m/s]
 loop_lin_a: 0.25       # Linear acceleration and deceleration of trajectory [m/s^2]

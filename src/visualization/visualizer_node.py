@@ -440,9 +440,9 @@ class VisualizerWrapper:
             std_dev_ay = np.std(self.y_noisy[:, 7])
             std_dev_az = np.std(self.y_noisy[:, 8])
 
-            print(f"Standard deviation of the Position: {std_dev_x}, {std_dev_y}, {std_dev_z}")
-            print(f"Standard deviation of the Angular: {std_dev_wx}, {std_dev_wy}, {std_dev_wz}")
-            print(f"Standard deviation of the Acceleration: {std_dev_ax}, {std_dev_ay}, {std_dev_az}")
+            # print(f"Standard deviation of the Position: {std_dev_x}, {std_dev_y}, {std_dev_z}")
+            # print(f"Standard deviation of the Angular: {std_dev_wx}, {std_dev_wy}, {std_dev_wz}")
+            # print(f"Standard deviation of the Acceleration: {std_dev_ax}, {std_dev_ay}, {std_dev_az}")
 
             # Compute MHE Estimation Error
             mhe_p_error = rmse(self.t_act, self.x_act[:, :3], self.t_est, self.x_est[:, :3])

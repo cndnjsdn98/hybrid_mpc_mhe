@@ -1,15 +1,16 @@
 # MHE Measurement Noise
 # No Noise --------------
 # MHE System Noise Weight
-# cost/w_p: 0.0009
-# cost/w_q: 0.0003
-# cost/w_v: 0.01 
-# cost/w_r: 0.175
+# cost/w_p: 0.01
+# cost/w_q: 0.00001
+# cost/w_v: 0.0075
+# cost/w_r: 0.01
 # cost/w_d: 0.1
+# cost/w_m: 0.00025
+
 # MHE Measurement Noise
-# cost/v_p: 0.001
+# cost/v_p: 0.0001
 # cost/v_r: 0.0001
-# cost/v_a: 0.00009
 # cost/v_d: 0.001
 
 # Noise Level I --------------
@@ -60,20 +61,26 @@
 # cost/w_r: 0.1
 # cost/w_d: 1
 # cost/w_m: 0.009
+# Lemniscate z=0.5 m=0.3
+# cost/w_p: 0.02
+# cost/w_q: 0.001
+# cost/w_v: 0.1
+# cost/w_r: 0.1
+# cost/w_d: 1
+# cost/w_m: 0.01
 # Circle z=0.5
-cost/w_p: 0.01
-cost/w_q: 0.001
-cost/w_v: 0.025
+cost/w_p: 0.005
+cost/w_q: 0.0075
+cost/w_v: 0.07
 cost/w_r: 0.1
 cost/w_d: 1
-cost/w_m: 0.009
+cost/w_m: 0.02
 # MHE Measurement Noise
-# cost/v_p: 1
-# cost/v_r: 0.03
-# cost/v_a: 0.3
 cost/v_p: 1
 cost/v_r: 0.003
 cost/v_d: 0.05
+
+cost/q0_factor: 1
 
 # NN Model ------------------
 nn/input_features: "a"

@@ -1,0 +1,12 @@
+{
+    "quad_name": "hummingbird",
+    "env": "gazebo",
+    "t_mpc": 1,
+    "n_mpc": 10,
+    "gt": true,
+    "use_nn": true,
+    "model_type": "gp",
+    "model_name": "gz_v_v_20_mpc",
+    "correction_mode": "offline",
+    "payload_m": 0.3
+}
