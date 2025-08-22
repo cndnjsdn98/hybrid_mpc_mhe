@@ -15,9 +15,10 @@ this program. If not, see <http://www.gnu.org/licenses/>.
 from std_msgs.msg import Bool
 from hybrid_mpc_mhe.msg import ReferenceTrajectory
 from src.quad.quad import Quadrotor
-from src.trajectory.trajectories import circle_trajectory, random_trajectory, lemniscate_trajectory, hover_trajectory
+from src.trajectory.trajectories import circle_trajectory, random_trajectory, lemniscate_trajectory, hover_trajectory, vertical_loop_trajectory
 import numpy as np
 import rospy
+import rosnode
 
 
 class ReferenceGenerator:
@@ -25,6 +26,7 @@ class ReferenceGenerator:
     def __init__(self):
 
         self.mpc_busy = True
+        self.visualizer_busy = True
 
         rospy.init_node("reference_generator")
 
@@ -42,8 +44,8 @@ class ReferenceGenerator:
             v_list = [float(v.strip()) for v in v_list.split(',')]
 
         # Select if generate "random" trajectories, "hover" mode or increasing speed "circle" mode
-        mode = rospy.get_param('~trajectory', default="")
-        assert mode in ["circle", "lemniscate", "hover", "random"]
+        mode = rospy.get_param('~trajectory', default="").lower()
+        assert mode in ["circle", "lemniscate", "viviani", "hover", "random", "vertical_loop"]
         if mode != "random":
             n_seeds = 1
 
@@ -66,9 +68,15 @@ class ReferenceGenerator:
         opt_dt = t_horizon / (n_mpc_nodes * control_freq_factor)
 
         reference_topic = rospy.get_param('/ref_topic', default="/reference")
-        status_topic = rospy.get_param('/mpc_status_topic', default="/mpc/busy")
+        mpc_status_topic = rospy.get_param('/mpc_status_topic', default="/mpc/busy")
         reference_pub = rospy.Publisher(reference_topic, ReferenceTrajectory, queue_size=1)
-        rospy.Subscriber(status_topic, Bool, self.status_callback)
+        rospy.Subscriber(mpc_status_topic, Bool, self.mpc_status_callback)
+        visualizer_node_name = rospy.get_param('/visualizer_node_name', default="/visualizer_node") 
+        if visualizer_node_name in rosnode.get_node_names():
+            visualizer_status_topic = rospy.get_param('/visualizer_status_topic', default="/visualizer/busy")
+            rospy.Subscriber(visualizer_status_topic, Bool, self.visualizer_status_callback)
+        else:
+            self.visualizer_busy = False
 
         v_ind = 0
         seed = 0
@@ -80,18 +88,18 @@ class ReferenceGenerator:
         rate = rospy.Rate(0.2)
         while not rospy.is_shutdown():
             # NOTE: HOVER MODE IS NOT BEING ACCEPTED BY MPC NODE RIGHT NOW
-            # if not self.mpc_busy and mode == "hover":
+            # if not self.mpc_busy and not self.visualizer_busy and mode == "hover":
             #     rospy.loginfo("Sending hover-in-place command")
             #     msg = ReferenceTrajectory()
             #     reference_pub.publish(msg)
             #     rospy.signal_shutdown("All trajectories were sent to the MPC")
             #     break
 
-            if not self.mpc_busy and curr_trajectory_ind == n_trajectories:
+            if not self.mpc_busy and not self.visualizer_busy and curr_trajectory_ind == n_trajectories:
                 rospy.signal_shutdown("All trajectories were sent to the MPC")
                 break
 
-            if not self.mpc_busy and mode == "circle":
+            if not self.mpc_busy and not self.visualizer_busy and mode == "circle":
                 rospy.loginfo("Sending increasing speed circular trajectory")
                 x_ref, t_ref, u_ref = circle_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z,
                                                       lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
@@ -109,8 +117,9 @@ class ReferenceGenerator:
                 curr_trajectory_ind += 1
                 self.mpc_busy = True
 
-            elif not self.mpc_busy and mode == "lemniscate":
+            elif not self.mpc_busy and not self.visualizer_busy and mode == "lemniscate":
                 rospy.loginfo("Sending increasing speed lemniscate trajectory")
+                z_dim = 0
                 x_ref, t_ref, u_ref = lemniscate_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z, z_dim=z_dim,
                                                             lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
                                                             yawing=loop_yawing, plot=plot, environment=env)
@@ -126,8 +135,46 @@ class ReferenceGenerator:
                 reference_pub.publish(msg)
                 curr_trajectory_ind += 1
                 self.mpc_busy = True
+            
+            elif not self.mpc_busy and not self.visualizer_busy and mode == "viviani":
+                rospy.loginfo("Sending increasing speed Viviani trajectory")
+                if z_dim == 0:
+                    z_dim = 0.5
+                x_ref, t_ref, u_ref = lemniscate_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z, z_dim=z_dim,
+                                                            lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
+                                                            yawing=loop_yawing, plot=plot, environment=env)
 
-            elif not self.mpc_busy and mode == "random":
+                msg = ReferenceTrajectory()
+                msg.traj_name = "viviani"
+                msg.v_input = loop_v_max
+                msg.seq_len = x_ref.shape[0]
+                msg.trajectory = np.reshape(x_ref, (-1,)).tolist()
+                msg.dt = t_ref.tolist()
+                msg.inputs = np.reshape(u_ref, (-1,)).tolist()
+
+                reference_pub.publish(msg)
+                curr_trajectory_ind += 1
+                self.mpc_busy = True
+
+            elif not self.mpc_busy and not self.visualizer_busy and mode == "vertical_loop":
+                rospy.loginfo("Sending increasing speed vertical loop trajectory")
+                x_ref, t_ref, u_ref = vertical_loop_trajectory(quad, opt_dt, v_max=loop_v_max, radius=loop_r, z=loop_z,
+                                                      lin_acc=loop_a, clockwise=loop_cc, map_name=map_limits,
+                                                      yawing=False, plot=plot, environment=env)
+                
+                msg = ReferenceTrajectory()
+                msg.traj_name = "vertical_loop"
+                msg.v_input = loop_v_max
+                msg.seq_len = x_ref.shape[0]
+                msg.trajectory = np.reshape(x_ref, (-1,)).tolist()
+                msg.dt = t_ref.tolist()
+                msg.inputs = np.reshape(u_ref, (-1,)).tolist()
+
+                reference_pub.publish(msg)
+                curr_trajectory_ind += 1
+                self.mpc_busy = True
+
+            elif not self.mpc_busy and not self.visualizer_busy and mode == "random":
 
                 speed = v_list[v_ind]
                 log_msg = "Random trajectory generator %d/%d. Seed: %d. Mean vel: %.3f m/s" % \
@@ -154,7 +201,7 @@ class ReferenceGenerator:
                     seed += 1
                     v_ind = 0
 
-            elif not self.mpc_busy and mode == "hover":
+            elif not self.mpc_busy and not self.visualizer_busy and mode == "hover":
                 rospy.loginfo("Sending hover trajectory")
                 x_ref, t_ref, u_ref = hover_trajectory(quad, opt_dt, lin_acc=loop_a, radius=loop_r,
                                                         z=loop_z, z_dim=z_dim, map_name=map_limits, 
@@ -172,12 +219,12 @@ class ReferenceGenerator:
                 curr_trajectory_ind += 1
                 self.mpc_busy = True
 
-            elif not self.mpc_busy:
+            elif not self.mpc_busy and not self.visualizer_busy:
                 raise ValueError("Unknown trajectory type: %s" % mode)
 
             rate.sleep()
 
-    def status_callback(self, msg):
+    def mpc_status_callback(self, msg):
         """
         Callback function for tracking if the gp_mpc node is busy
         :param msg: Message from the subscriber
@@ -185,7 +232,13 @@ class ReferenceGenerator:
         """
         self.mpc_busy = msg.data
 
-
+    def visualizer_status_callback(self, msg):
+        """
+        Callback function for tracking if the visualizer node is busy
+        :param msg: Message from the subscriber
+        :type msg: Bool
+        """
+        self.visualizer_busy = msg.data
 
 if __name__ == "__main__":
 

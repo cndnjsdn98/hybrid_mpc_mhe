@@ -19,7 +19,6 @@ import casadi as cs
 import numpy as np
 from scipy.linalg import block_diag
 import l4casadi as l4c
-import time
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 from src.utils.utils import v_dot_q
 from src.utils.DirectoryConfig import DirectoryConfig as DirConfig
@@ -29,7 +28,7 @@ class QuadOptimizerMHE:
     def __init__(self, quad:Quadrotor, t_mhe=0.5, n_mhe=50, 
                  mhe_type="k",
                  q_mhe=None, q0_factor=None, r_mhe=None, 
-                 use_nn=False, nn_params={}):
+                 use_nn=False, nn_params={}, payload=False):
         """
         :param quad: quadrotor object.
         :type quad: Quadrotor3D
@@ -51,11 +50,12 @@ class QuadOptimizerMHE:
         self.mhe_type = mhe_type 
         # Quad
         self.quad = quad
-
+        # Unknown Payload Mass Estimation
+        self.payload = payload 
         # Use Data Driven (Neural Network) models
         self.use_nn = use_nn
         self.nn_params = nn_params
-        if self.use_nn:
+        if self.use_nn and self.mhe_type == "d":
             self.model_name = self.nn_params['model_name']
             self.model_type = self.nn_params['model_type']
             self.input_features = self.nn_params['input_features']
@@ -120,7 +120,14 @@ class QuadOptimizerMHE:
         self.v_dot_w = cs.MX.sym('v_dot_w', 3)
         self.r_dot = cs.MX.sym('r_dot', 3)
         self.x_dot = cs.vertcat(self.p_dot, self.q_dot, self.v_dot_w, self.r_dot)
-
+        
+        # Command input vector
+        u1 = cs.MX.sym('u1')
+        u2 = cs.MX.sym('u2')
+        u3 = cs.MX.sym('u3')
+        u4 = cs.MX.sym('u4')
+        self.u = cs.vertcat(u1, u2, u3, u4)
+        
         # Declare model noise variables for MHE
         self.w_p = cs.MX.sym('w_p', 3)  # position
         self.w_q = cs.MX.sym('w_q', 4)  # angle quaternion (wxyz)
@@ -174,27 +181,44 @@ class QuadOptimizerMHE:
                     self.x_dot = cs.vertcat(self.x_dot, self.nn_corr_dot)
                     self.w = cs.vertcat(self.w, self.w_corr)
                     # Input Vector
-                    self.y = cs.vertcat(self.p, self.r, self.nn_corr_B)
+                    # self.y = cs.vertcat(self.p, self.r, self.nn_corr_B)
                     self.B_x = np.zeros((self.state_dim, self.n_corr))
                     for i, idx in enumerate(self.nn_output_idx):
                         self.B_x[idx, i] = 1
-
             else:
                 # Full state dim remains same
                 self.state_dim = 13
                 # Input Vecotr
                 self.y = cs.vertcat(self.p, self.r)
-            # Command input vector
-            u1 = cs.MX.sym('u1')
-            u2 = cs.MX.sym('u2')
-            u3 = cs.MX.sym('u3')
-            u4 = cs.MX.sym('u4')
-            self.u = cs.vertcat(u1, u2, u3, u4)
+
+            # Parameter Estimation of unknown payload mass
+            if self.payload:
+                # Parameter for payload mass
+                self.m = cs.MX.sym('m') # payload mass
+                self.m_dot = cs.MX.sym('m_dot')
+                self.w_m = cs.MX.sym('w_m')
+                # Include new state to system states
+                self.x = cs.vertcat(self.x, self.m)
+                self.x_dot = cs.vertcat(self.x_dot, self.m_dot)
+                self.w = cs.vertcat(self.w, self.w_m)
+                if self.use_nn: # and self.correction_mode == "offline":
+                    self.B_x = np.append(self.B_x, np.zeros((1, self.n_corr)), axis=0)
+                # Number of States increase
+                self.payload_mass_idx = self.state_dim
+                self.state_dim += 1
+                # self.state_dim += 1
+                self.init_payload_mass = 0
+
+            # Construct Observation Vector: y
+            self.a_thrust = self.quad.a_thrust(self.u, payload=self.m if self.payload else None)
+            # if self.use_nn and "v" in self.output_features:
+            #     self.a_thrust += self.nn_v_b
+            self.y = cs.vertcat(self.p, self.r, self.a_thrust)
+            if self.use_nn:
+                self.y = cs.vertcat(self.y, self.nn_corr_B)
             
         # Set costs for w
         self.w_cost = np.zeros((self.state_dim))
-        # Params
-        self.param = np.array([])
 
     def quad_dynamics(self):
         """
@@ -204,21 +228,31 @@ class QuadOptimizerMHE:
         """
         p_dyn = self.quad.p_dynamics(self.x)
         q_dyn = self.quad.q_dynamics(self.x)
+        r_dyn = cs.vertcat(0, 0, 0)
         if self.mhe_type == "k":
             g = cs.vertcat(0.0, 0.0, 9.81)
             v_dyn = v_dot_q(self.a, self.q) - g
             a_dyn = cs.vertcat(0, 0, 0)
             corr_dyn = cs.vertcat()
+            pm_dyn = cs.vertcat()
         elif self.mhe_type == "d":
-            v_dyn = self.quad.v_dynamics(self.x, self.u)
+            v_dyn = self.quad.v_dynamics(self.x, self.u, payload=self.m if self.payload else None)
             a_dyn = cs.vertcat()
             if self.use_nn and self.correction_mode == "offline":
                 corr_dyn = np.zeros(self.n_corr)
                 # corr_dyn = cs.vertcat(0, 0, 0)
             else:
                 corr_dyn = cs.vertcat()
-        r_dyn = cs.vertcat(0, 0, 0)
-        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn) + self.w
+            if self.payload:
+                pm_dyn = 0
+            else:
+                pm_dyn = cs.vertcat()
+
+        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn, pm_dyn) + self.w
+
+        # if self.payload and self.mhe_type == "d":
+        #     x_dot = cs.vertcat(x_dot, 0)
+
         if self.use_nn:
             x_dot = x_dot + cs.mtimes(self.B_x, self.nn_corr_W)
         return cs.Function('x_dot_mhe', [self.x, self.u, self.w], [x_dot], ['x', 'u', 'w'], ['x_dot'])
@@ -261,6 +295,8 @@ class QuadOptimizerMHE:
         """
         # Set Arrival Cost as a factor of q_cost
         q0_cost = q_cost * q0_factor
+        # if self.payload:
+        #     q_cost = q_cost[:self.state_dim]
 
         # Number of states and Inputs of the model
         # make acceleration as error
@@ -323,7 +359,11 @@ class QuadOptimizerMHE:
         # ocp_mhe.constraints.nh = 1
         # ocp_mhe.constraints.lh = np.array([1 - eps])
         # ocp_mhe.constraints.uh = np.array([1 + eps])
-        
+
+        if self.payload and self.mhe_type == "d":
+            ocp_mhe.constraints.lbx_0 = np.array([0])
+            ocp_mhe.constraints.ubx_0 = np.array([15])
+            ocp_mhe.constraints.idxbx_0 = np.array([self.payload_mass_idx])
         # Solver options
         ocp_mhe.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         ocp_mhe.solver_options.hessian_approx = 'GAUSS_NEWTON'
@@ -358,6 +398,8 @@ class QuadOptimizerMHE:
                 self.x0_bar = np.append(p, np.array(q + v + r))    
                 if self.use_nn:
                     self.x0_bar = np.append(self.x0_bar, self.nn_corr_init)       
+                if self.payload:
+                    self.x0_bar = np.append(self.x0_bar, self.init_payload_mass)
         
         # Set motor thrusts for dynamic MHE
         if self.mhe_type == "d":
@@ -385,17 +427,17 @@ class QuadOptimizerMHE:
             self.x_est = self.acados_mhe_solver.get(self.N, "x") 
             self.x0_bar = self.acados_mhe_solver.get(1, "x")
 
-        self.qp_iter = self.acados_mhe_solver.get_stats('qp_iter')
-        self.sqp_iter = self.acados_mhe_solver.get_stats('sqp_iter')
-        self.opt_dt = self.acados_mhe_solver.get_stats('time_tot')[0]
+            self.qp_iter = self.acados_mhe_solver.get_stats('qp_iter')
+            self.sqp_iter = self.acados_mhe_solver.get_stats('sqp_iter')
+            self.opt_dt = self.acados_mhe_solver.get_stats('time_tot')[0]
 
         return status
 
     def get_state_est(self):
         return self.x_est[:self.state_dim]
 
-    def get_param_est(self):
-        return self.x_est[self.state_dim:]
+    def get_mass_est(self):
+        return self.x0_bar[-1]
     
     def get_opt_dt(self):
         return self.opt_dt

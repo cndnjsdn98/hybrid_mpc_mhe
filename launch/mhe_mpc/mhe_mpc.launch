@@ -21,13 +21,13 @@
     <arg name="mhe_use_nn" default="False"/>
 
     <!-- Start Recording node to record MPC and MHE -->
-    <arg name="record" default="False"/>
+    <arg name="record" default="True"/>
     <arg name="overwrite" default="True"/>
 
     <!-- Reference trajectory parameters -->
     <arg name="n_seeds" default="1"/> <!-- How many random seeds to use to generate trajectories -->
     <arg name="trajectory_speeds" default="[4.0]"/>
-    <arg name="traj" default=""/> <!-- one of: random, hover, loop, lemniscate -->
+    <arg name="traj" default="lemniscate"/> <!-- one of: random, hover, loop, lemniscate -->
     <arg name="plot" default="true"/>
 
 

@@ -1,33 +1,53 @@
 control_freq_factor: 5
 
 # MPC Costs
-cost/q_p: 30
-cost/q_q: 25
-cost/q_v: 10
-cost/q_r: 15
-cost/qt_factor: 0
-cost/r_mpc: 1
+cost/noise_level_0/q_p: 40
+cost/noise_level_0/q_q: 35
+cost/noise_level_0/q_v: 20
+cost/noise_level_0/q_r: 20
+cost/noise_level_0/qt_factor: 0
+cost/noise_level_0/r_mpc: 1
 
-# cost/q_p: 40
-# cost/q_q: 35
-# cost/q_v: 20
-# cost/q_r: 20
-# cost/qt_factor: 0
-# cost/r_mpc: 1
+# Noise Level I
+cost/noise_level_1/q_p: 15
+cost/noise_level_1/q_q: 10
+cost/noise_level_1/q_v: 5
+cost/noise_level_1/q_r: 7
+cost/noise_level_1/qt_factor: 0
+cost/noise_level_1/r_mpc: 1
 
-# cost/q_p: 400
-# cost/q_q: 350
-# cost/q_v: 200
-# cost/q_r: 200
-# cost/qt_factor: 0
-# cost/r_mpc: 2
+# Noise Level II
+cost/noise_level_2/q_p: 15
+cost/noise_level_2/q_q: 10
+cost/noise_level_2/q_v: 5
+cost/noise_level_2/q_r: 7
+cost/noise_level_2/qt_factor: 0
+cost/noise_level_2/r_mpc: 1
 
-# cost/q_p: 0.5
-# cost/q_q: 0.1
-# cost/q_v: 0.05
-# cost/q_r: 0.01
-# cost/qt_factor: 0
-# cost/r_mpc: 1
+# Noise Level III
+# cost/noise_level_3/q_p: 15
+# cost/noise_level_3/q_q: 10
+# cost/noise_level_3/q_v: 3
+# cost/noise_level_3/q_r: 8
+# cost/noise_level_3/qt_factor: 0
+# cost/noise_level_3/r_mpc: 1
+
+# With GP
+cost/noise_level_3/q_p: 15
+cost/noise_level_3/q_q: 10
+cost/noise_level_3/q_v: 3
+cost/noise_level_3/q_r: 8
+cost/noise_level_3/qt_factor: 0
+cost/noise_level_3/r_mpc: 1
+
+# Noise Level IMU
+cost/noise_level_IMU/q_p: 15
+cost/noise_level_IMU/q_q: 10
+cost/noise_level_IMU/q_v: 5
+cost/noise_level_IMU/q_r: 7
+cost/noise_level_IMU/qt_factor: 0
+cost/noise_level_IMU/r_mpc: 1
+
 
 # Data Driven Model
 nn/input_features: "v"
@@ -39,8 +59,8 @@ nn/correction_mode: "offline"
 # Landing options
 land_z: 0.1
 land_dz: 0.5
-land_z_thr: 0.05
+land_z_thr: 0.1
 
 # Approaching Init. Pos.
-init_thr: 0.5
+init_thr: 0.35
 init_v: 0.75

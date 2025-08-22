@@ -1,70 +1,133 @@
 # MHE Measurement Noise
 # No Noise --------------
 # MHE System Noise Weight
-# cost/w_p: 0.0009
-# cost/w_q: 0.0003
-# cost/w_v: 0.01 
-# cost/w_r: 0.175
-# cost/w_d: 0.1
+cost/noise_level_0/noise_level_0/w_p: 0.01
+cost/noise_level_0/w_q: 0.00001
+cost/noise_level_0/w_v: 0.0075
+cost/noise_level_0/w_r: 0.01
+cost/noise_level_0/w_d: 0.1
+cost/noise_level_0/w_m: 0.00025
+
 # MHE Measurement Noise
-# cost/v_p: 0.001
-# cost/v_r: 0.0001
-# cost/v_a: 0.00009
-# cost/v_d: 0.001
+cost/noise_level_0/v_p: 0.0001
+cost/noise_level_0/v_r: 0.0001
+cost/noise_level_0/v_d: 0.001
 
 # Noise Level I --------------
 # MHE System Noise Weight
-# cost/w_p: 0.0009
-# cost/w_q: 0.0003
-# cost/w_v: 0.01 
-# cost/w_r: 0.175
-# cost/w_d: 0.1
+cost/noise_level_1/w_p: 0.0009
+cost/noise_level_1/w_q: 0.0001
+cost/noise_level_1/w_v: 0.005
+cost/noise_level_1/w_r: 0.175
+cost/noise_level_1/w_d: 0.1
+cost/noise_level_1/w_m: 0.0000175
 # MHE Measurement Noise
-# cost/v_p: 0.007
-# cost/v_r: 0.007
-# cost/v_a: 0.007
-# cost/v_d: 0.001
+cost/noise_level_1/v_p: 0.007
+cost/noise_level_1/v_r: 0.007
+cost/noise_level_1/v_a: 0.007
+cost/noise_level_1/v_d: 0.001
 
 # Noise Level II -------------
 # MHE System Noise Weight
-# cost/w_p: 0.0009
-# cost/w_q: 0.0003
-# cost/w_v: 0.01 
-# cost/w_r: 0.175
-# cost/w_d: 0.1
+# cost/noise_level_2/w_p: 0.04
+# cost/noise_level_2/w_q: 0.0015 # 0.001
+# cost/noise_level_2/w_v: 0.025 # 0.025
+# cost/noise_level_2/w_r: 0.2
+cost/noise_level_3/w_p: 0.03
+cost/noise_level_3/w_q: 0.00075
+cost/noise_level_3/w_v: 0.01
+cost/noise_level_3/w_r: 0.3
+cost/noise_level_2/w_d: 0.3
+cost/noise_level_2/w_m: 0.0000175
 # MHE Measurement Noise
-# cost/v_p: 0.5
-# cost/v_r: 0.015
-# cost/v_a: 0.01
-# cost/v_d: 0.001
+cost/noise_level_2/v_p: 0.5
+cost/noise_level_2/v_r: 0.015
+cost/noise_level_2/v_a: 0.01
+cost/noise_level_2/v_d: 0.001
 
 # Noise Level III ------------
-# MHE System Noise Weight
-# cost/w_p: 0.0175
-# cost/w_q: 0.001
-# cost/w_v: 0.0175
-# cost/w_r: 0.3
-# cost/w_d: 0.01
+# Circle m = 0.3
+# # MHE System Noise Weight
+# cost/noise_level_3/w_p: 0.02
+# cost/noise_level_3/w_q: 0.001
+# cost/noise_level_3/w_v: 0.03
+# cost/noise_level_3/w_r: 0.25
+# cost/noise_level_3/w_d: 1
+# cost/noise_level_3/w_m: 0.00023
+# # MHE Measurement Noise
+# cost/noise_level_3/v_p: 1
+# cost/noise_level_3/v_r: 0.03
+# cost/noise_level_3/v_a: 0.1
+# cost/noise_level_3/v_d: 0.0001
 
-# cost/w_p: 0.01
-# cost/w_q: 0.001
-# cost/w_v: 0.02
-# cost/w_r: 0.3
-# cost/w_d: 1
+# Viviani v_max=4.5
+# MHE System Noise Weight
+# cost/noise_level_3/w_p: 0.02
+# cost/noise_level_3/w_q: 0.001
+# cost/noise_level_3/w_v: 0.03
+# cost/noise_level_3/w_r: 0.375
+# cost/noise_level_3/w_d: 1
+# cost/noise_level_3/w_m: 0.00023
+# # MHE Measurement Noise
+# cost/noise_level_3/v_p: 1
+# cost/noise_level_3/v_r: 0.03
+# cost/noise_level_3/v_a: 0.1
+# cost/noise_level_3/v_d: 0.0001
+
+# Lemniscate v_max=6
+# MHE System Noise Weight
+cost/noise_level_3/w_p: 0.02
+cost/noise_level_3/w_q: 0.001
+cost/noise_level_3/w_v: 0.03
+cost/noise_level_3/w_r: 0.375
+cost/noise_level_3/w_d: 1
+cost/noise_level_3/w_m: 0.0023
+# MHE Measurement Noise
+cost/noise_level_3/v_p: 1
+cost/noise_level_3/v_r: 0.03
+cost/noise_level_3/v_a: 0.1
+cost/noise_level_3/v_d: 0.0001
 
 # Noise Level IMU ------------
-cost/w_p: 0.01
-cost/w_q: 0.001
-cost/w_v: 0.025
-cost/w_r: 0.1
-cost/w_d: 1
+# Lemniscate z=0.5
+
+# MHE System Noise Weight
+cost/noise_level_IMU/w_p: 0.02
+cost/noise_level_IMU/w_q: 0.001
+cost/noise_level_IMU/w_v: 0.035
+cost/noise_level_IMU/w_r: 0.1
+cost/noise_level_IMU/w_d: 1
+cost/noise_level_IMU/w_m: 0.00012
 # MHE Measurement Noise
-# cost/v_p: 1
-# cost/v_r: 0.03
-# cost/v_a: 0.3
-cost/v_p: 1
-cost/v_r: 0.003
-cost/v_d: 0.05
+cost/noise_level_IMU/v_p: 1
+cost/noise_level_IMU/v_r: 0.003
+cost/noise_level_IMU/v_a: 0.05
+cost/noise_level_IMU/v_d: 0.05
+
+# Lemniscate z=0.5 m=0.3
+# cost/noise_level_IMU/w_p: 0.02
+# cost/noise_level_IMU/w_q: 0.001
+# cost/noise_level_IMU/w_v: 0.1
+# cost/noise_level_IMU/w_r: 0.1
+# cost/noise_level_IMU/w_d: 1
+# cost/noise_level_IMU/w_m: 0.01
+# Circle z=0.5
+# cost/noise_level_IMU/w_p: 0.005
+# cost/noise_level_IMU/w_q: 0.0075
+# cost/noise_level_IMU/w_v: 0.07
+# cost/noise_level_IMU/w_r: 0.1
+# cost/noise_level_IMU/w_d: 1
+# cost/noise_level_IMU/w_m: 0.00025
+
+# cost/noise_level_IMU/w_p: 0.001
+# cost/noise_level_IMU/w_q: 0.00001
+# cost/noise_level_IMU/w_v: 0.001
+# cost/noise_level_IMU/w_r: 1
+# cost/noise_level_IMU/w_d: 1
+# cost/noise_level_IMU/w_m: 0.000001
+
+
+cost/q0_factor: 1
 
 # NN Model ------------------
 nn/input_features: "a"
@@ -72,7 +135,3 @@ nn/output_features: "v"
 nn/model_name: "gz_a_v_20_mhe"
 nn/model_type: "gp"
 nn/correction_mode: "offline"
-
-# MHE: p Estimation RMSE: 0.49882 m
-# MHE: q Estimation RMSE: 0.20162 deg
-# MHE: v Estimation RMSE: 0.79255 m/s

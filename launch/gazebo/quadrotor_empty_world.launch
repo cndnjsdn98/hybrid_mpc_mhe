@@ -41,4 +41,5 @@
     <arg name="x_init" value="$(arg x_init)"/>
     <arg name="y_init" value="$(arg y_init)"/>
   </include>
+
 </launch>

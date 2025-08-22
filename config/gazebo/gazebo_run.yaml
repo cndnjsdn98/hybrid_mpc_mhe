@@ -5,22 +5,27 @@ imu_topic: "/hummingbird/ground_truth/imu"
 pose_topic: "/hummingbird/ground_truth/pose"
 control_topic: "/hummingbird/autopilot/control_command_input"
 
+# Payload mass
+payload_mass: 0.0
+
 # Simulate Sensor Noise Levels
 sensor_noise: True
+noise_level: IMU
+
 # # Noise Level I ------------------
-# p_noise_std: 0.007
-# r_noise_std: 0.007
-# a_noise_std: 0.007
+noise_level_1/p_noise_std: 0.007
+noise_level_1/r_noise_std: 0.007
+noise_level_1/a_noise_std: 0.007
 # # Noise Level II -----------------
-# p_noise_std: 0.5
-# r_noise_std: 0.015
-# a_noise_std: 0.01
+noise_level_2/p_noise_std: 0.5
+noise_level_2/r_noise_std: 0.015
+noise_level_2/a_noise_std: 0.01
 # # Noise Level III ----------------
-# p_noise_std: 1
-# r_noise_std: 0.03
-# a_noise_std: 0.1
+noise_level_3/p_noise_std: 1
+noise_level_3/r_noise_std: 0.03
+noise_level_3/a_noise_std: 0.1
 
 # Noise Level IMU
-p_noise_std: 1
-r_noise_std: 0.003
-a_noise_std: 0.05
+noise_level_IMU/p_noise_std: 1
+noise_level_IMU/r_noise_std: 0.003
+noise_level_IMU/a_noise_std: 0.05

@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
 import rospy
+import rosnode
 import threading
 import numpy as np
+from scipy.signal import find_peaks
 
 from src.utils.utils import v_dot_q, quaternion_state_mse, state_features_to_idx, world_to_body_velocity_mapping
 from src.quad.quad import Quadrotor
@@ -13,7 +15,7 @@ from src.gp.GPyModelWrapper import GPyModelWrapper
 from hybrid_mpc_mhe.msg import ReferenceTrajectory
 from mav_msgs.msg import Actuators
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Bool, Empty, Header
+from std_msgs.msg import Bool, Empty, Header, Float32
 from quadrotor_msgs.msg import ControlCommand
 from mavros_msgs.msg import AttitudeTarget
 from mavros_msgs.srv import CommandBool, SetMode
@@ -63,8 +65,19 @@ class MPCNode:
         # System environment
         self.env = rospy.get_param("/environment", default="gazebo")
         self.quad_name = rospy.get_param("/quad_name", default=None)
+
         assert self.quad_name != None
+        # Load Quad Instance
+        self.quad = Quadrotor(self.quad_name)
+
         self.use_groundtruth = rospy.get_param("~use_groundtruth", default=True)
+        
+        # Sensor noise
+        self.sensor_noise = rospy.get_param("/sensor_noise", default=False)
+        if self.sensor_noise and not self.use_groundtruth:
+            self.sensor_noise_level = rospy.get_param("/noise_level", default=3)
+        else:
+            self.sensor_noise_level = 0
 
         # Initial flight parameters
         self.init_thr = rospy.get_param("~init_thr", default=0.5)
@@ -74,6 +87,19 @@ class MPCNode:
         self.land_thr = rospy.get_param("~land_thr", default=0.05)
         self.land_z = rospy.get_param("~land_z", default=0.05)
         self.land_dz = rospy.get_param("~land_dz", default=0.1)
+        self.ref_gen_node_name = rospy.get_param('/ref_pub_node_name', default="/ref_gen/ref_gen") 
+        self.no_more_ref = True
+
+        # Simulate payload mass
+        self.payload_mass_gt = rospy.get_param("/payload_mass", default=None)
+        if self.payload_mass_gt is None or self.payload_mass_gt == 0:
+            self.payload = False
+            self.payload_mass_est = None
+        else:
+            self.payload = True
+            self.payload_mass_est = 0
+        self.payload_mass_pickedup = False
+        self.base_mass = self.quad.get_base_mass()
 
         # Initialize State Variables
         self.x = None
@@ -116,6 +142,7 @@ class MPCNode:
         record_topic = rospy.get_param("/record_topic", default="/" + self.quad_name + "/record")
         status_topic = rospy.get_param("/mpc_status_topic", default="/mpc/busy")
         # control_gz_topic = rospy.get_param("~control_gz_topic", default="/" + self.quad_name + "/autopilot/control_command_input")
+        quad_mass_change_topic = rospy.get_param("/quad_mass_change_topic", default="/" + self.quad_name + "/mass_change")
 
         # Publishers
         if self.env == "gazebo":
@@ -125,7 +152,11 @@ class MPCNode:
         self.motor_thrust_pub = rospy.Publisher(motor_thrust_topic, Actuators, queue_size=1, tcp_nodelay=True)
         self.record_pub = rospy.Publisher(record_topic, Bool, queue_size=1, tcp_nodelay=True)
         self.status_pub = rospy.Publisher(status_topic, Bool, queue_size=1, tcp_nodelay=True)
-        
+        if self.payload:
+            self.quad_mass_change_pub = rospy.Publisher(quad_mass_change_topic, Float32, queue_size=1, tcp_nodelay=True) # Only works for Gazebo
+            # Ensure Quad mass is correct mass
+            self.quad_mass_change_pub.publish(Float32(self.base_mass))
+
     def init_rosservice(self):
         set_mode_srvc = rospy.get_param("/set_mode_srvc", default="/mavros/set_mode")
         arming_srvc = rospy.get_param("/arming_srvc", default="/mavros/cmd/arming")
@@ -140,6 +171,7 @@ class MPCNode:
         state_est_topic = rospy.get_param("/state_est_topic", default= "/" + self.quad_name + "/state_est")
         odom_topic = rospy.get_param("/odom_topic", default="/" + self.quad_name + "/ground_truth/odometry")
         land_topic = rospy.get_param("/land", default="/" + self.quad_name + "/land")
+        payload_mass_est_topic = rospy.get_param("/payload_mass_est_topic", default="/" + self.quad_name + "/payload_mass_est")
 
         # Subscribers        
         self.ref_sub = rospy.Subscriber(ref_topic, ReferenceTrajectory, self.reference_callback)
@@ -148,6 +180,8 @@ class MPCNode:
         else:
             self.state_est_sub = rospy.Subscriber(state_est_topic, Odometry, self.state_est_callback, queue_size=1, tcp_nodelay=True)
         self.land_sub = rospy.Subscriber(land_topic, Empty, self.land_callback)
+        if not self.use_groundtruth:
+            self.payload_mass_est_sub = rospy.Subscriber(payload_mass_est_topic, Float32, self.payload_mass_est_callback, queue_size=10, tcp_nodelay=True)
 
     def init_mpc(self):
         # Binary variable to run MPC only once every other odometry callback
@@ -160,19 +194,17 @@ class MPCNode:
         self.t_mpc = rospy.get_param("~t_mpc", default=1)
 
         # MPC Costs
-        q_p = np.ones((1,3)) * rospy.get_param("~cost/q_p", default=35)
-        q_q = np.ones((1,3)) * rospy.get_param("~cost/q_q", default=25)
-        q_v = np.ones((1,3)) * rospy.get_param("~cost/q_v", default=10)
-        q_r = np.ones((1,3)) * rospy.get_param("~cost/q_r", default=10)
+        q_p = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/q_p", default=35)
+        q_q = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/q_q", default=25)
+        q_v = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/q_v", default=10)
+        q_r = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/q_r", default=10)
 
-        qt_factor = rospy.get_param("~cost/qt_factor", default=1)
+        qt_factor = rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/qt_factor", default=0.1)
 
         q_mpc = np.squeeze(np.hstack((q_p, q_q, q_v, q_r)))
-        r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param("~cost/r_mpc", default=0.1)
-
-        # Load Quad Instance
-        self.quad = Quadrotor(self.quad_name)
-
+        r_mpc = np.array([1.0, 1.0, 1.0, 1.0]) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/r_mpc", default=1)
+        rospy.loginfo("MPC Weights Q: %s"%str(q_mpc))
+        rospy.loginfo("MPC Weights R: %s"%str(r_mpc))
         # Load NN models
         if (self.use_nn):
             self.model_name = rospy.get_param("~nn/model_name", default=None)
@@ -200,7 +232,8 @@ class MPCNode:
         # Compile Acados Model
         self.quad_opt = QuadOptimizerMPC(self.quad, t_mpc=self.t_mpc, n_mpc=self.n_mpc,
                                          q_mpc=q_mpc, qt_factor=qt_factor, r_mpc=r_mpc, 
-                                         use_nn=self.use_nn, nn_params=self.nn_params)
+                                         use_nn=self.use_nn, nn_params=self.nn_params,
+                                         payload=self.payload)
     
     def land_callback(self, msg):
         """
@@ -255,6 +288,20 @@ class MPCNode:
                     input = np.append(input, self.u_ref, axis=1)
                 self.nn_corr = self.nn_model.predict(input, skip_variance=True)
 
+            # Select Payload mass pickup and dropoff points
+            if self.payload:
+                if np.all(self.x_ref[:, 2] == self.x_ref[0, 2]):
+                    # Find peaks in the x-trajectory to pickup and drop payload mass
+                    self.drop_mass_idx,_ = find_peaks(self.x_ref[:, 0])
+                    self.pickup_mass_idx,_ = find_peaks(-self.x_ref[:, 0])
+                    if self.pickup_mass_idx[-1] > self.drop_mass_idx[-1]:
+                        self.pickup_mass_idx = self.pickup_mass_idx[:-1]
+                else:
+                    # Find peaks in the z-trajectory to pickup and drop payload mass
+                    self.drop_mass_idx,_ = find_peaks(self.x_ref[:, 2])
+                    self.pickup_mass_idx,_ = find_peaks(-self.x_ref[:, 2])
+                    if self.pickup_mass_idx[-1] > self.drop_mass_idx[-1]:
+                        self.pickup_mass_idx = self.pickup_mass_idx[:-1]
             if len(self.t_ref) > 0:
                 rospy.loginfo("New trajectory received. Time duration: %.2f s" % self.t_ref[-1])
                 self.ref_received = True
@@ -272,6 +319,8 @@ class MPCNode:
 
         # Check if landing mode
         if self.land_override:
+            if self.payload:
+                self.quad_mass_change_pub.publish(Float32(self.base_mass))
             x_ref = self.last_x_ref if self.last_x_ref is not None else np.array(self.x)[np.newaxis, :]
             dz = np.sign(self.land_z - self.x[2]) * self.land_dz
             x_ref[0, 2] = min(self.land_z, self.x[2] + dz) if dz > 0 else max(self.land_z, self.x[2] + dz)
@@ -283,6 +332,10 @@ class MPCNode:
                 if (not self.ground_level):
                     rospy.loginfo("Vehicle at Ground Level")
                     self.ground_level = True
+                    if self.ref_gen_node_name in rosnode.get_node_names():
+                        print(rosnode.get_node_names())
+                    else:
+                        self.no_more_ref = True
                 self.ref_received = False
                 self.ref_traj_name = None
                 self.ref_len = None
@@ -301,11 +354,15 @@ class MPCNode:
 
         # If reference trajectory not received, pick current position as ref
         if (not self.ref_received):
+            if self.payload:
+                self.quad_mass_change_pub.publish(Float32(self.base_mass))
             if self.x_ref_prov is None:
                 self.x_ref_prov = np.array(self.x)[np.newaxis, :]
-                self.x_ref_prov[7:] = 0 # Set velocity states to zero
+                self.x_ref_prov[0, 7:] = 0 # Set velocity states to zero
+                if self.x_ref_prov[0, 2] < 1:
+                    self.x_ref_prov[0, 2] = 1
                 self.u_ref_prov = np.array([[0, 0, 0, 0]])  
-                rospy.loginfo("Selecting current position as provisional setpoint.")
+                rospy.loginfo("Selecting current position as provisional setpoint. %s"%str(self.x_ref_prov[0, :3]))
             x_ref = self.x_ref_prov
             u_ref = self.u_ref_prov
             # If using offline GP set parameters - No corrections made
@@ -318,11 +375,15 @@ class MPCNode:
             self.x_ref_prov = None
             self.u_ref_prov = None
             self.ground_level = False
+            self.no_more_ref = False
             rospy.loginfo("Abandoning provisional setpoint.")
+            rospy.loginfo("Initial position target: %s"%str(self.x_ref[0, :3]))
         
         # Check if starting position of trajectory has been reached
         if (not self.x_initial_reached):
-            mask = [1] * 9 + [0] * 3
+            if self.payload:
+                self.quad_mass_change_pub.publish(Float32(self.base_mass))
+            mask = [1] * 6 + [0] * 6
             if (quaternion_state_mse(np.array(self.x), self.x_ref[0, :], mask) < self.init_thr and not self.x_initial_reached): 
                 # Initial Point reached
                 self.x_initial_reached = True
@@ -340,6 +401,8 @@ class MPCNode:
                 # Fly towards initial position of trajectory
                 # x_ref = self.x_ref[np.newaxis, 0, :]
                 x_ref = np.array([self.x_ref[0, :]])
+                x_ref[0, 3] = 1
+                x_ref[0, 4:] = 0
                 u_ref = np.array([[0, 0, 0, 0]])
                 dx = self.init_v * np.sign(self.x_ref[0, 0] - self.x[0])
                 dy = self.init_v * np.sign(self.x_ref[0, 1] - self.x[1])
@@ -355,6 +418,20 @@ class MPCNode:
         
         # Executing Trajectory Tracking
         if (self.mpc_idx < self.ref_len):
+            # Payload mass
+            if self.payload:
+                if self.mpc_idx in self.pickup_mass_idx:
+                    self.payload_mass_pickedup = True
+                    if self.use_groundtruth:
+                        self.payload_mass_est = self.payload_mass_gt
+                elif self.mpc_idx in self.drop_mass_idx:
+                    self.payload_mass_pickedup = False
+                    if self.use_groundtruth:
+                        self.payload_mass_est = 0
+                if self.payload_mass_pickedup:
+                    self.quad_mass_change_pub.publish(Float32(self.base_mass + self.payload_mass_gt))
+                else:
+                    self.quad_mass_change_pub.publish(Float32(self.base_mass))
             # Trajectory tracking
             ref_traj = self.x_ref[self.mpc_idx:self.mpc_idx + self.n_mpc * self.control_freq_factor, :]
             ref_u = self.u_ref[self.mpc_idx:self.mpc_idx + self.n_mpc * self.control_freq_factor, :]
@@ -376,6 +453,8 @@ class MPCNode:
             return self.quad_opt.set_reference(x_ref, u_ref)
         # End of reference reached
         elif (self.mpc_idx == self.ref_len):
+            if self.payload:
+                self.quad_mass_change_pub.publish(Float32(self.base_mass))
             # Compute optimization dt
             self.opt_dt /= self.mpc_idx
             self.opt_dt *= 1000
@@ -469,7 +548,8 @@ class MPCNode:
 
         # optimize MPC
         try:
-            if (self.quad_opt.solve_mpc(self.x, nn_corr=self.nn_corr_i) == 0):
+            if (self.quad_opt.solve_mpc(self.x, nn_corr=self.nn_corr_i, 
+                                        payload_m=self.payload_mass_est) == 0):
                 x_opt, u_opt = self.quad_opt.get_controls()
                 self.opt_dt += self.quad_opt.get_opt_dt()
             else:
@@ -491,8 +571,8 @@ class MPCNode:
             control_cmd_msg.bodyrates.x = x_opt[1, -3]
             control_cmd_msg.bodyrates.y = x_opt[1, -2]
             control_cmd_msg.bodyrates.z = x_opt[1, -1]
-            collective_thrust = np.sum(u_opt[0]) * self.quad.max_thrust / self.quad.mass
-            if self.ground_level:
+            collective_thrust = np.sum(u_opt[0]) * self.quad.get_max_thrust() / self.quad.get_mass()
+            if self.ground_level and self.no_more_ref:
                 collective_thrust *= 0.01
             control_cmd_msg.collective_thrust = collective_thrust
         elif self.env == "arena":
@@ -511,7 +591,7 @@ class MPCNode:
                 control_cmd_msg.body_rate.z = x_opt[1, -1]
                 control_cmd_msg.type_mask = 128
             thrust = np.sum(u_opt[0])/4
-            if self.ground_level:
+            if self.ground_level and self.no_more_ref:
                 thrust *= 0.5
             control_cmd_msg.thrust =  thrust
         self.control_pub.publish(control_cmd_msg)
@@ -520,6 +600,10 @@ class MPCNode:
         motor_thrust_msg.header = Header()
         motor_thrust_msg.angular_velocities = u_opt[0]
         self.motor_thrust_pub.publish(motor_thrust_msg)
+    
+    def payload_mass_est_callback(self, msg):
+        self.payload_mass_est = msg.data
+
 def main():
     # Load parameters?
 

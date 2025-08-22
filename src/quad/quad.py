@@ -37,8 +37,7 @@ class Quadrotor:
         if prop:
             self.x = cs.MX.sym('x', 13)
             self.u = cs.MX.sym('u', 4)
-            self.param = np.array([])
-            self.quad_xdot_prop = self.dynamics(self.x, self.u, self.param)
+            self.quad_xdot_prop = self.dynamics(self.x, self.u)
 
     def custom_quad_param_loader(self, quad_name):
 
@@ -50,6 +49,7 @@ class Quadrotor:
 
         self.quad_name = quad_name
 
+        self.base_mass = float(attrib['mass']) # mass of just the frame/base
         self.mass = (float(attrib['mass']) + float(attrib['mass_rotor']) * 4)
         self.J = np.array([float(attrib['body_inertia'][0]['ixx']),
                         float(attrib['body_inertia'][0]['iyy']),
@@ -95,7 +95,7 @@ class Quadrotor:
 
         return 
     
-    def dynamics(self, x, u, param, w=None):
+    def dynamics(self, x, u, payload=None):
         """
         Symbolic dynamics of the 3D quadrotor model. The state consists on: [p_xyz, a_wxyz, v_xyz, r_xyz]^T, where p
         stands for position, a for angle (in quaternion form), v for velocity and r for body rate. The input of the
@@ -105,9 +105,12 @@ class Quadrotor:
         Inputs: 'x' state of quadrotor (6x1) and 'u' control input (2x1). Output: differential state vector 'x_dot'
         (6x1)
         """
-        
-        x_dot = cs.vertcat(self.p_dynamics(x), self.q_dynamics(x), self.v_dynamics(x, u), self.w_dynamics(x, u))
-        return cs.Function('x_dot', [x, u, param], [x_dot], ['x', 'u', 'p'], ['x_dot'])
+        if payload is not None:
+            x_dot = cs.vertcat(self.p_dynamics(x), self.q_dynamics(x), self.v_dynamics(x, u, payload), self.w_dynamics(x, u))
+            return cs.Function('x_dot', [x, u, payload], [x_dot], ['x', 'u', 'p'], ['x_dot'])
+        else:
+            x_dot = cs.vertcat(self.p_dynamics(x), self.q_dynamics(x), self.v_dynamics(x, u), self.w_dynamics(x, u))
+            return cs.Function('x_dot', [x, u], [x_dot], ['x', 'u'], ['x_dot'])
 
     def p_dynamics(self, x):
         v = x[7:10]
@@ -118,12 +121,15 @@ class Quadrotor:
         r = x[10:]
         return 1 / 2 * cs.mtimes(skew_symmetric(r), q)
 
-    def v_dynamics(self, x, u):
+    def v_dynamics(self, x, u, payload=None):
         q = x[3:7]
 
         g = cs.vertcat(0.0, 0.0, 9.81)
         f_thrust = u * self.max_thrust
-        a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass)# + self.load_m)
+        if payload is not None:
+            a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass + payload)
+        else:
+            a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass)
 
         v_dynamics = v_dot_q(a_thrust, q) - g
 
@@ -142,6 +148,14 @@ class Quadrotor:
             (-cs.mtimes(f_thrust.T, x_f) + (self.J[2] - self.J[0]) * r[2] * r[0]) / self.J[1],
             (cs.mtimes(f_thrust.T, c_f) + (self.J[0] - self.J[1]) * r[0] * r[1]) / self.J[2])
 
+    def a_thrust(self, u, payload=None):
+        f_thrust = u * self.max_thrust
+        if payload is not None:
+            a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass + payload)
+        else:
+            a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass)
+        return a_thrust
+    
     def discretize_dynamics(self, t_horizon, m_steps_per_point=1):
         """
         Integrates the symbolic dynamics and cost equations until the time horizon using a RK4 method.
@@ -153,7 +167,6 @@ class Quadrotor:
         # Fixed step Runge-Kutta 4 integrator
         dt = t_horizon / m_steps_per_point
         u = self.u
-        u = cs.vertcat(self.u, self.param)
         x0 = self.x
 
         for _ in range(m_steps_per_point):
@@ -189,3 +202,12 @@ class Quadrotor:
 
     def get_hover_thrust(self):
         return self.hover_thrust
+
+    def get_base_mass(self):
+        return self.base_mass
+    
+    def get_mass(self):
+        return self.mass
+    
+    def get_max_thrust(self):
+        return self.max_thrust

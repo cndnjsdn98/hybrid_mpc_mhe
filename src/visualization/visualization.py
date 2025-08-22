@@ -233,7 +233,8 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
                              t_meas_noisy, y_measured_noisy, mhe_error, t_acc_est=None, accel_est=None, 
                              model_corr=None, model_corr_features=[], file_type='png',
                              show_error=False, show_dvdt=False, a_thrust=None,
-                             a_est_b=None, a_meas_b=None):
+                             a_est_b=None, a_meas_b=None,
+                             payload_m_gt=None, payload_m_est=None):
     plt.switch_backend('Agg')
     SMALL_SIZE = 14
     MEDIUM_SIZE = 18
@@ -531,6 +532,20 @@ def state_estimation_results(img_save_dir, t_act, x_act, t_est, x_est, t_meas, y
                 transparent=False, bbox_inches=None, metadata=None)
     plt.close(fig)   
 
+    if payload_m_gt is not None:
+        fig, ax = plt.subplots(1, 1, figsize=(13, 14))
+        ax.plot(t_act[::2], payload_m_gt, label="act")
+        if payload_m_est is not None:
+            ax.plot(t_est, payload_m_est, label="est")
+        ax.legend()
+        ax.set_ylabel(r"Payload Mass [kg]")
+        ax.set_xlabel(r"$t [s]$")
+        plt.tight_layout()
+        fig.savefig(img_save_dir + '/payload_mass.'+file_type, dpi=None, facecolor='w', edgecolor='w',
+                    orientation='portrait', format=file_type,
+                    transparent=False, bbox_inches=None, metadata=None)
+        plt.close(fig) 
+        
     if model_corr is not None:
         feature_idx = 0
         if 'q' in model_corr_features:
