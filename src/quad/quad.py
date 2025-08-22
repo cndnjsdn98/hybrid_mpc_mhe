@@ -148,6 +148,14 @@ class Quadrotor:
             (-cs.mtimes(f_thrust.T, x_f) + (self.J[2] - self.J[0]) * r[2] * r[0]) / self.J[1],
             (cs.mtimes(f_thrust.T, c_f) + (self.J[0] - self.J[1]) * r[0] * r[1]) / self.J[2])
 
+    def a_thrust(self, u, payload=None):
+        f_thrust = u * self.max_thrust
+        if payload is not None:
+            a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass + payload)
+        else:
+            a_thrust = cs.vertcat(0.0, 0.0, f_thrust[0] + f_thrust[1] + f_thrust[2] + f_thrust[3]) / (self.mass)
+        return a_thrust
+    
     def discretize_dynamics(self, t_horizon, m_steps_per_point=1):
         """
         Integrates the symbolic dynamics and cost equations until the time horizon using a RK4 method.

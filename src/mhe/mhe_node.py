@@ -113,9 +113,13 @@ class MHENode:
 
         # Simulate Sensor noise
         self.sensor_noise = rospy.get_param("/sensor_noise", default=False)
-        self.p_noise_std = rospy.get_param("/p_noise_std", default=0)
-        self.r_noise_std = rospy.get_param("/r_noise_std", default=0)
-        self.a_noise_std = rospy.get_param("/a_noise_std", default=0)
+        if self.sensor_noise:
+            self.sensor_noise_level = rospy.get_param("/noise_level", default=3)
+        else:
+            self.sensor_noise_level = 0
+        self.p_noise_std = rospy.get_param("/noise_level_" + str(self.sensor_noise_level) + "/p_noise_std", default=0)
+        self.r_noise_std = rospy.get_param("/noise_level_" + str(self.sensor_noise_level) + "/r_noise_std", default=0)
+        self.a_noise_std = rospy.get_param("/noise_level_" + str(self.sensor_noise_level) + "/a_noise_std", default=0)
 
         # Simulate payload mass
         payload_mass = rospy.get_param("/payload_mass", default=0)
@@ -165,7 +169,11 @@ class MHENode:
         else:
             rospy.logerr("MHE: Invalid MHE type selected")  
             return 0 
-        self.use_nn = rospy.get_param("~use_nn", default=False)
+        if self.mhe_type == "d":
+            self.use_nn = rospy.get_param("~use_nn", default=False)
+        else:
+            self.use_nn = False
+            
         self.n_mhe = rospy.get_param("~n_mhe", default=50)
         self.t_mhe = rospy.get_param("~t_mhe", default=0.5)
         
@@ -196,18 +204,18 @@ class MHENode:
 
         # MHE costs
         # System Noise
-        w_p = np.ones((1,3)) * rospy.get_param("~cost/w_p", default=0.004)
-        w_q = np.ones((1,3)) * rospy.get_param("~cost/w_q", default=0.01)
-        w_v = np.ones((1,3)) * rospy.get_param("~cost/w_v", default=0.005)
-        w_r = np.ones((1,3)) * rospy.get_param("~cost/w_r", default=0.5)
-        w_a = np.ones((1,3)) * rospy.get_param("~cost/w_a", default=0.05)
-        w_d = np.ones((1,3)) * rospy.get_param("~cost/w_d", default=0.00001)
-        w_m = np.ones((1,1)) * rospy.get_param("~cost/w_m", default=0.0)
+        w_p = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_p", default=0.004)
+        w_q = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_q", default=0.01)
+        w_v = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_v", default=0.005)
+        w_r = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_r", default=0.5)
+        w_a = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_a", default=0.05)
+        w_d = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_d", default=0.00001)
+        w_m = np.ones((1,1)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/w_m", default=0.0)
         # Measurement Noise
-        v_p = np.ones((1,3)) * rospy.get_param("~cost/v_p", default=0.002)
-        v_r = np.ones((1,3)) * rospy.get_param("~cost/v_r", default=1e-6)
-        v_a = np.ones((1,3)) * rospy.get_param("~cost/v_a", default=1e-5)
-        v_d = np.ones((1,3)) * rospy.get_param("~cost/v_d", default=0.0001)
+        v_p = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/v_p", default=0.002)
+        v_r = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/v_r", default=1e-6)
+        v_a = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/v_a", default=1e-5)
+        v_d = np.ones((1,3)) * rospy.get_param("~cost/noise_level_" + str(self.sensor_noise_level) + "/v_d", default=0.0001)
         # Arrival cost factor
         q0_factor = rospy.get_param("~cost/q0_factor", default=1)
 
@@ -217,10 +225,10 @@ class MHENode:
         elif self.mhe_type == "d":
             if not self.use_nn:
                 q_mhe = np.hstack((w_p, w_q, w_v, w_r))
-                r_mhe = np.hstack((v_p, v_r))
+                r_mhe = np.hstack((v_p, v_r, v_a))
             elif self.use_nn and self.correction_mode == "offline":
                 q_mhe = np.hstack((w_p, w_q, w_v, w_r, w_d))
-                r_mhe = np.hstack((v_p, v_r, v_d))
+                r_mhe = np.hstack((v_p, v_r, v_a, v_d))
             elif self.use_nn and self.correction_mode == "online":
                 # TODO: Set up q and r for online correction
                 q_mhe = np.hstack((w_p, w_q, w_v, w_r))
@@ -228,6 +236,9 @@ class MHENode:
             if self.payload:
                 q_mhe = np.hstack((q_mhe, w_m))
 
+        rospy.loginfo("MHE System Noise: %s"%str(q_mhe))
+        rospy.loginfo("MHE Measurement Noise: %s"%str(r_mhe))
+        rospy.loginfo("MHE Arrival Factor: %s"%str(q0_factor))
         q_mhe = 1/np.squeeze(q_mhe**2)
         r_mhe = 1/np.squeeze(r_mhe**2)
 
@@ -293,20 +304,16 @@ class MHENode:
         self.sensor_measurement_pub.publish(quad_sensor_msg)
 
         # Concatenate sensor measurements
-        if self.mhe_type == "k":
-            self.y = np.hstack((self.p, self.r, self.a))
-        elif self.mhe_type == "d" and not self.use_nn:
-            self.y = np.hstack((self.p, self.r))
-        elif self.mhe_type == "d" and self.use_nn:
+        self.y = np.hstack((self.p, self.r, self.a))
+        if self.mhe_type == "d" and self.use_nn:
             if (self.correction_mode == "offline"):
                 # Compute model error using NN model
-                y = np.hstack((self.p, self.r, self.a))
-                self.nn_corr = self.nn_model(y[self.nn_input_idx])
+                self.nn_corr = self.nn_model(self.y[self.nn_input_idx])
                 if self.y_history_filled:
                     self.y_hist[-1, -len(self.nn_output_idx):] = self.nn_corr
-                self.y = np.hstack((self.p, self.r, np.zeros_like(self.nn_corr)))
-                # self.y = np.hstack((self.p, self.r, self.nn_corr_last))
-                # self.nn_corr_last = self.nn_model(y[self.nn_input_idx])
+                # self.y = np.hstack((self.y, np.zeros_like(self.nn_corr)))
+                self.y = np.hstack((self.y, self.nn_corr_last))
+                self.nn_corr_last = self.nn_model(self.y[self.nn_input_idx])
             elif self.correction_mode == "online":
                 # TODO: it may not always be this 
                 self.y = np.hstack((self.p, self.r, self.a))

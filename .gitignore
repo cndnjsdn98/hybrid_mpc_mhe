@@ -51,7 +51,8 @@ qtcreator-*
 CATKIN_IGNORE
 
 # Results
-# results/*
+results/**
+models/**
 
 # Pyc cache
 */__pycache__/

@@ -12,7 +12,7 @@ from src.utils.DirectoryConfig import DirectoryConfig as DirConf
 from src.gp.GPDataset import GPDataset
 from src.utils.utils import state_features_to_idx, sensor_features_to_idx
 
-def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, output_feature, lrate=0.1, n_induce=None, verbose=0,keep_train_data=False):
+def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, output_feature, lrate=0.1, n_induce=None, verbose=0,keep_train_data=False, n_seeds=None):
     """
     Train GP models for MPC model compensation. The trained GP model provides acceleration corrections to the dynamic model for
     improved accuracy of model prediction. 
@@ -38,20 +38,43 @@ def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, outp
     """
     load_model = False
 
-    # Load Dataset
-    flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
-    results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
     x_features_idx = state_features_to_idx(input_feature)
     y_features_idx = state_features_to_idx(output_feature)
-    gp_ds = GPDataset(results_dir)
 
-    # Select data points to be used
-    x_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
-    y_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
-    for i, (xi, yi) in enumerate(zip(x_features_idx, y_features_idx)):
-        train_in, train_out = gp_ds.get_train_ds(xi, yi)
-        x_train[i, :] = np.squeeze(train_in)
-        y_train[i, :] = np.squeeze(train_out)
+    if trajectory_name == "random":
+        x_train = np.zeros((len(x_features_idx), 0))
+        y_train = np.zeros((len(x_features_idx), 0))
+
+        for i in range(n_seeds):
+            # Load Dataset
+            flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
+            results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, "%s_%d"%(trajectory_name, i))
+            gp_ds = GPDataset(results_dir)
+
+            # Select data points to be used
+            x_train_ = np.zeros((len(x_features_idx), gp_ds.get_len()))
+            y_train_ = np.zeros((len(x_features_idx), gp_ds.get_len()))
+            for i, (xi, yi) in enumerate(zip(x_features_idx, y_features_idx)):
+                train_in, train_out = gp_ds.get_train_ds(xi, yi)
+                x_train_[i, :] = np.squeeze(train_in)
+                y_train_[i, :] = np.squeeze(train_out)
+            x_train = np.append(x_train, x_train_, axis=1)
+            y_train = np.append(y_train, y_train_, axis=1)
+
+    else:
+        # Load Dataset
+        flight_name = "%s_mpc%s_%s"%(env, "_gt" if gt else "", quad_name)
+        results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
+        gp_ds = GPDataset(results_dir)
+
+        # Select data points to be used
+        x_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
+        y_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
+        for i, (xi, yi) in enumerate(zip(x_features_idx, y_features_idx)):
+            train_in, train_out = gp_ds.get_train_ds(xi, yi)
+            x_train[i, :] = np.squeeze(train_in)
+            y_train[i, :] = np.squeeze(train_out)
+
     x_train = torch.Tensor(x_train.T)
     y_train = torch.Tensor(y_train.T)
 
@@ -64,14 +87,14 @@ def train_MPC_gp(quad_name, trajectory_name, env, gt, epoch, input_feature, outp
     if not load_model:
         gp_model.train(x_train, y_train, epoch, induce_num=n_induce, verbose=verbose, script_model=False, lrate=lrate)
 
-    x, y = gp_ds.get_train_ds()
-    x = torch.Tensor(x[:, x_features_idx])
-    y = torch.Tensor(y[:, y_features_idx])
-    gp_model.visualize_model(x, y)
+    # x, y = gp_ds.get_train_ds()
+    # x = torch.Tensor(x[:, x_features_idx])
+    # y = torch.Tensor(y[:, y_features_idx])
+    gp_model.visualize_model(x_train, y_train)
             
     return gp_model
 
-def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_feature, lrate=0.1, n_induce=None, verbose=0, keep_train_data=False):
+def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_feature, lrate=0.1, n_induce=None, verbose=0, keep_train_data=False, mhe_type="d", n_seeds=None):
     """
     Train GP models for D-MHE model compensation. The trained GP model provides acceleration corrections to the dynamic model for
     improved accuracy of model prediction. 
@@ -94,24 +117,46 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     :type n_induce: Int
     """
     load_model = False
-
-    # Load Dataset
-    flight_name = "%s_dmhe_%s"%(env, quad_name)
-    results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
     # TODO: input feature for measurements fix
     x_features_idx = sensor_features_to_idx(input_feature)
     y_features_idx = state_features_to_idx(output_feature)
-    # TODO: Change to FlightDataset
-    gp_ds = GPDataset(results_dir)
-    
-    # Select data points to be used
-    x_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
-    y_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
-    for i, (xi, yi) in enumerate(zip(x_features_idx, y_features_idx)):
-        train_in, train_out = gp_ds.get_train_ds(xi, yi)
-        x_train[i, :] = np.squeeze(train_in)
-        y_train[i, :] = np.squeeze(train_out)
-    print(x_train.shape)
+
+    if trajectory_name == "random":
+        x_train = np.zeros((len(x_features_idx), 0))
+        y_train = np.zeros((len(x_features_idx), 0))
+
+        for i in range(n_seeds):
+            # Load Dataset
+            flight_name = "%s_%smhe_%s"%(env, mhe_type, quad_name)
+            results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, "%s_%d"%(trajectory_name, i))
+
+            # TODO: Change to FlightDataset
+            gp_ds = GPDataset(results_dir)
+            
+            # Select data points to be used
+            x_train_ = np.zeros((len(x_features_idx), gp_ds.get_len()))
+            y_train_ = np.zeros((len(x_features_idx), gp_ds.get_len()))
+            for i, (xi, yi) in enumerate(zip(x_features_idx, y_features_idx)):
+                train_in, train_out = gp_ds.get_train_ds(xi, yi)
+                x_train_[i, :] = np.squeeze(train_in)
+                y_train_[i, :] = np.squeeze(train_out)
+            x_train = np.append(x_train, x_train_, axis=1)
+            y_train = np.append(y_train, y_train_, axis=1)
+    else:
+        # Load Dataset
+        flight_name = "%s_%smhe_%s"%(env, mhe_type, quad_name)
+        results_dir = os.path.join(DirConf.FLIGHT_DATA_DIR, flight_name, trajectory_name)
+        # TODO: Change to FlightDataset
+        gp_ds = GPDataset(results_dir)
+        
+        # Select data points to be used
+        x_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
+        y_train = np.zeros((len(x_features_idx), gp_ds.get_len()))
+        for i, (xi, yi) in enumerate(zip(x_features_idx, y_features_idx)):
+            train_in, train_out = gp_ds.get_train_ds(xi, yi)
+            x_train[i, :] = np.squeeze(train_in)
+            y_train[i, :] = np.squeeze(train_out)
+
     x_train = torch.Tensor(x_train.T)
     y_train = torch.Tensor(y_train.T)
 
@@ -123,30 +168,32 @@ def train_MHE_gp(quad_name, trajectory_name, env, epoch, input_feature, output_f
     gp_model = GPyModelWrapper(model_name, load=load_model, x_features=x_features_idx, y_features=y_features_idx, mhe=True, keep_train_data=keep_train_data)
     gp_model.train(x_train, y_train, epoch, induce_num=n_induce, verbose=verbose, script_model=False, lrate=lrate)
 
-    x, y = gp_ds.get_train_ds()
-    x = torch.Tensor(x[:, x_features_idx])
-    y = torch.Tensor(y[:, y_features_idx])
-    gp_model.visualize_model(x, y,)
+    # x, y = gp_ds.get_train_ds()
+    # x = torch.Tensor(x[:, x_features_idx])
+    # y = torch.Tensor(y[:, y_features_idx])
+    gp_model.visualize_model(x_train, y_train,)
 
     return gp_model
 
 if __name__ == "__main__":
     quad_name = "hummingbird"
-    trajectory_name = "lemniscate"
-    environment = "gazebo"
-    gt = True
+    trajectory_name = "random"
+    n_seeds = 5
+    environment = "gazebo"  
+    mhe_type = "d"
+    gt = False
     mpc_input_feature = 'v'
     mhe_input_feature = 'a'
     output_feature = 'v'
-    mpc_epoch = 500
+    mpc_epoch = 1000
     mpc_lrate=0.01
-    mhe_epoch = 300
+    mhe_epoch = 1000
     mhe_lrate=0.005
     n_induce = 20
     verbose = 5
     keep_train_data = True
     train_mpc = True
-    train_mhe = True
+    train_mhe = False
     if train_mpc:
         train_MPC_gp(quad_name, 
                     trajectory_name, 
@@ -158,7 +205,8 @@ if __name__ == "__main__":
                     n_induce=n_induce,
                     lrate=mpc_lrate,
                     verbose=verbose,
-                    keep_train_data=keep_train_data)
+                    keep_train_data=keep_train_data,
+                    n_seeds=n_seeds)
     if train_mhe:
         train_MHE_gp(quad_name,
                     trajectory_name,
@@ -169,4 +217,6 @@ if __name__ == "__main__":
                     lrate=mhe_lrate,
                     n_induce=n_induce,
                     verbose=verbose,
-                    keep_train_data=keep_train_data)
+                    keep_train_data=keep_train_data,
+                    mhe_type=mhe_type,
+                    n_seeds=n_seeds)

@@ -1,6 +1,7 @@
 {
     "quad_name": "hummingbird",
     "env": "gazebo",
+    "noise_level": "IMU",
     "t_mhe": 0.5,
     "n_mhe": 50,
     "mhe_type": "d",

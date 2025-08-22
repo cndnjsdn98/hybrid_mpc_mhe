@@ -36,6 +36,12 @@ class VisualizerWrapper:
         
         self.quad = Quadrotor(self.quad_name, prop=True)
 
+        self.sensor_noise = rospy.get_param("/sensor_noise", default=False)
+        if self.sensor_noise:
+            self.sensor_noise_level = rospy.get_param("/noise_level", default=3)
+        else:
+            self.sensor_noise_level = 0
+
         self.overwrite = rospy.get_param("~overwrite", default=False)
 
         self.payload_m = rospy.get_param("/payload_mass", default=0)
@@ -86,6 +92,7 @@ class VisualizerWrapper:
         self.mpc_meta = {
             'quad_name': self.quad_name,
             'env': self.env,
+            'noise_level': self.sensor_noise_level,
             't_mpc': self.t_mpc,
             'n_mpc': self.n_mpc,
             'gt': self.use_groundtruth,
@@ -98,6 +105,7 @@ class VisualizerWrapper:
         self.mhe_meta = {
             'quad_name': self.quad_name,
             'env': self.env,
+            'noise_level': self.sensor_noise_level,
             't_mhe': self.t_mhe,
             'n_mhe': self.n_mhe,
             'mhe_type': self.mhe_type,
@@ -153,6 +161,7 @@ class VisualizerWrapper:
         self.timer_payload = rospy.Timer(rospy.Duration(1), self.check_payload_mass)
 
         self.record = False
+        self.saving_data = False
 
         # Initialize vectors to store Reference Trajectory
         self.seq_len = None
@@ -204,7 +213,7 @@ class VisualizerWrapper:
         mhe_model_correction_topic = rospy.get_param("~model_correction_topic", default="/" + self.quad_name + "/mhe/model_correction")
         quad_mass_gt_topic = rospy.get_param("/quad_mass_change_topic", default="/" + self.quad_name + "/mass_change")
         payload_mass_est_topic  = rospy.get_param("/payload_mass_est_topic", default="/" + self.quad_name + "/payload_mass_est")
-
+        visualizer_status_topic = rospy.get_param("/visualizer_status_topic", default="/visualizer/busy")
         # Subscribers
         self.imu_sub = rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=1, tcp_nodelay=False)
         self.motor_thrust_sub = rospy.Subscriber(motor_thrust_topic, Actuators, self.motor_thrust_callback, queue_size=1, tcp_nodelay=False)
@@ -222,12 +231,24 @@ class VisualizerWrapper:
         self.quad_mass_gt_sub = rospy.Subscriber(quad_mass_gt_topic, Float32, self.quad_mass_gt_callback, queue_size=10, tcp_nodelay=True)
         self.payload_mass_est_sub = rospy.Subscriber(payload_mass_est_topic, Float32, self.payload_mass_est_callback, queue_size=10, tcp_nodelay=True)
 
+        # Publishers
+        self.visualizer_status_pub = rospy.Publisher(visualizer_status_topic, Bool, queue_size=1)
+
         rospy.loginfo("Visualizer on standby listening...")
         rospy.loginfo("MPC w/%s"% ("OUT NN" if not self.mpc_use_nn else " %s %s"%(self.mpc_model_type.upper(), self.mpc_correction_mode)))
         rospy.loginfo("%sUsing Groundtruth!"%("" if self.use_groundtruth else "NOT "))
         if self.mhe_type is not None:
             rospy.loginfo("%s-MHE w/%s"% (self.mhe_type.upper(), "OUT NN" if not self.mhe_use_nn else " %s %s"%(self.mhe_model_type.upper(), self.mhe_correction_mode)))
 
+        rate = rospy.Rate(1)
+        while not rospy.is_shutdown():
+            # Publish if MPC is busy with a current trajectory
+            busy_msg = Bool()
+            busy_msg.data = self.record or self.saving_data
+            self.visualizer_status_pub.publish(busy_msg)
+            rate.sleep()
+        return
+    
 
     def save_recording_data(self):
         # Remove Exceeding data entry if needed    
@@ -280,7 +301,12 @@ class VisualizerWrapper:
             # Dynamic Model Pred
             x_pred = self.quad.forward_prop(x0, u, t_horizon=dt)
             # x_pred = x_pred[-1, np.newaxis, :]
-            x_pred_B = vw_to_vb(x_pred)
+            # x_pred_B = vw_to_vb(x_pred)
+            q = xf[3:7]
+            vw = x_pred[7:10]
+            vb = v_dot_q(vw, quaternion_inverse(q))
+            x_pred_B = x_pred
+            x_pred_B[7:10] = vb
             
             # MPC Model error
             x_err = xf_B - x_pred_B
@@ -406,7 +432,10 @@ class VisualizerWrapper:
                 q_act_inv = quaternion_inverse(self.x_act[i][3:7])
 
                 # Model Accel Estimation
-                a_thrust = np.array([0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.get_max_thrust() / self.quad.get_mass()])
+                if self.payload and self.mhe_type == "d":
+                    a_thrust = np.array([0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.get_max_thrust() / (self.quad.get_mass() + self.payload_mass_est[i])])
+                else:
+                    a_thrust = np.array([0, 0, (u[0] + u[1] + u[2] + u[3]) * self.quad.get_max_thrust() / self.quad.get_mass()])
                 a_thrust_traj[i] = np.squeeze(a_thrust.T)
                 g = np.array([0, 0, -9.81])
                 a_est_b = v_dot_q(v_dot_q(a_thrust, q) + g, q_inv)
@@ -448,6 +477,25 @@ class VisualizerWrapper:
             mhe_p_error = rmse(self.t_act, self.x_act[:, :3], self.t_est, self.x_est[:, :3])
             mhe_q_error = q_rmse(self.t_act, self.x_act[:, 3:7], self.t_est, self.x_est[:, 3:7])
             mhe_v_error = rmse(self.t_act, self.x_act[:, 7:10], self.t_est, self.x_est[:, 7:10])
+            if self.payload:
+                mhe_pm_error = rmse(self.t_act[::2], self.payload_mass_gt[:, np.newaxis], self.t_est[::2], self.payload_mass_est[::2, np.newaxis])
+            # MHE costs
+            # System Noise
+            w_p = np.ones((1,3)) * rospy.get_param("~cost/w_p", default=0.004)
+            w_q = np.ones((1,3)) * rospy.get_param("~cost/w_q", default=0.01)
+            w_v = np.ones((1,3)) * rospy.get_param("~cost/w_v", default=0.005)
+            w_r = np.ones((1,3)) * rospy.get_param("~cost/w_r", default=0.5)
+            w_a = np.ones((1,3)) * rospy.get_param("~cost/w_a", default=0.05)
+            w_d = np.ones((1,3)) * rospy.get_param("~cost/w_d", default=0.00001)
+            w_m = np.ones((1,1)) * rospy.get_param("~cost/w_m", default=0.0)
+            # Measurement Noise
+            v_p = np.ones((1,3)) * rospy.get_param("~cost/v_p", default=0.002)
+            v_r = np.ones((1,3)) * rospy.get_param("~cost/v_r", default=1e-6)
+            v_a = np.ones((1,3)) * rospy.get_param("~cost/v_a", default=1e-5)
+            v_d = np.ones((1,3)) * rospy.get_param("~cost/v_d", default=0.0001)
+            # Arrival cost factor
+            q0_factor = rospy.get_param("~cost/q0_factor", default=1)
+
             # Organize arrays to dictionary
             mhe_dict = {
                 "t": self.t_imu[:, np.newaxis],
@@ -461,16 +509,33 @@ class VisualizerWrapper:
                 "p_rmse": np.array(mhe_p_error)[np.newaxis],
                 "q_rmse": np.array(mhe_q_error)[np.newaxis],
                 "v_rmse": np.array(mhe_v_error)[np.newaxis],
+                "w_p": w_p,
+                "w_q": w_q,
+                "w_v": w_v,
+                "w_r": w_r,
+                "v_p": v_p,
+                "v_r": v_r,
+                "v_a": v_a,
             } 
+            if self.payload:
+                mhe_dict["payload_mass_est"] = self.payload_mass_est
+                mhe_dict["payload_mass_gt"] = self.payload_mass_gt
+                mhe_dict["pm_rmse"] = mhe_pm_error
+            if self.mhe_type == "k":
+                mhe_dict["w_a"] = w_a
+            else:
+                if self.payload:
+                    mhe_dict["w_m"] = w_m
+                if self.mhe_use_nn:
+                    mhe_dict["w_d"] = w_d
+                    mhe_dict["v_d"] = v_d
 
             # Save results
             mhe_dir = os.path.join(self.mhe_dir, self.ref_traj_name)
             if not self.overwrite and os.path.exists(os.path.join(mhe_dir, 'meta_data.json')):
                 with open(os.path.join(mhe_dir, 'meta_data.json'), "rb") as f:
                     existing_meta_data = json.load(f)
-                print(self.mhe_meta == existing_meta_data)
-                print(self.mhe_meta)
-                print(existing_meta_data)
+
                 if self.mhe_meta == existing_meta_data:
                     with open(os.path.join(mhe_dir, "results.pkl"), "rb") as f:
                         existing_data = pickle.load(f)
@@ -560,6 +625,10 @@ class VisualizerWrapper:
             rospy.loginfo("MHE: p Estimation RMSE: %.5f m" % (mhe_p_error))
             rospy.loginfo("MHE: q Estimation RMSE: %.5f deg" % (np.rad2deg(mhe_q_error)))
             rospy.loginfo("MHE: v Estimation RMSE: %.5f m/s" % (mhe_v_error))
+            if self.payload:
+                rospy.loginfo("MHE: M Estimation RMSE: %.5f kg" % (mhe_pm_error))
+
+        self.saving_data = False
     
     def imu_callback(self, msg):
         if not self.record:
@@ -667,6 +736,7 @@ class VisualizerWrapper:
             # Recording has begun
             rospy.loginfo("Recording...")     
             self.record = True
+            self.saving_data = True
 
         if self.record and msg.data == False:
             # Recording ended
@@ -674,6 +744,7 @@ class VisualizerWrapper:
             # Run thread for saving the recorded data
             _save_record_thread = threading.Thread(target=self.save_recording_data(), args=(), daemon=True)
             _save_record_thread.start()
+
     
     def sensor_measurement_callback(self, msg):
         if not self.record:

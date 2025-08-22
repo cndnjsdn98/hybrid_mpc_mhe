@@ -195,11 +195,11 @@ class GPyModelWrapper(torch.nn.Module):
         model_dict = {}
         likelihood_dict = {}
         for i, idx in enumerate(gp_config["x_features"]):
+            state_dicts = torch.load(os.path.join(self.gp_model_dir, "gpy_model_" + str(idx) + ".pth"), weights_only=True)
+            model = ApproximateGPModel(state_dicts['inducing_points'].float())
+            model.load_state_dict(state_dicts['model_state_dict'])
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
-            model = ApproximateGPModel(torch.linspace(0, 1, gp_config["induce_num"]))
-            # load state_dict
-            state_dict = torch.load(os.path.join(self.gp_model_dir, "gpy_model_" + str(idx) + ".pth"), weights_only=True)
-            model.load_state_dict(state_dict)
+            likelihood.load_state_dict(state_dicts['likelihood_state_dict'])
             model_dict[idx] = model.eval()
             likelihood_dict[idx] = likelihood.eval()
         model = model_dict
@@ -320,7 +320,10 @@ class GPyModelWrapper(torch.nn.Module):
         # Save GPy Models
         for i, x_feature in enumerate(self.x_features):
             model = model_dict[x_feature].cpu().double()
-            torch.save(model.state_dict(), os.path.join(self.gp_model_dir, "gpy_model_" + str(x_feature) + ".pth"))
+            likelihood = likelihood_dict[x_feature].cpu().double()
+            torch.save({'model_state_dict': model.state_dict(),
+                        'likelihood_state_dict': likelihood.state_dict(),
+                        'inducing_points':model.variational_strategy.inducing_points}, os.path.join(self.gp_model_dir, f"gpy_model_{x_feature}.pth"))
             if script_model:
                 wrapped_model = MeanVarModelWrapper(model).double()
                 example_input = train_x[:1, i].clone().detach().double()

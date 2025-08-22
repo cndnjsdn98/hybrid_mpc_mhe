@@ -55,7 +55,7 @@ class QuadOptimizerMHE:
         # Use Data Driven (Neural Network) models
         self.use_nn = use_nn
         self.nn_params = nn_params
-        if self.use_nn:
+        if self.use_nn and self.mhe_type == "d":
             self.model_name = self.nn_params['model_name']
             self.model_type = self.nn_params['model_type']
             self.input_features = self.nn_params['input_features']
@@ -120,7 +120,14 @@ class QuadOptimizerMHE:
         self.v_dot_w = cs.MX.sym('v_dot_w', 3)
         self.r_dot = cs.MX.sym('r_dot', 3)
         self.x_dot = cs.vertcat(self.p_dot, self.q_dot, self.v_dot_w, self.r_dot)
-
+        
+        # Command input vector
+        u1 = cs.MX.sym('u1')
+        u2 = cs.MX.sym('u2')
+        u3 = cs.MX.sym('u3')
+        u4 = cs.MX.sym('u4')
+        self.u = cs.vertcat(u1, u2, u3, u4)
+        
         # Declare model noise variables for MHE
         self.w_p = cs.MX.sym('w_p', 3)  # position
         self.w_q = cs.MX.sym('w_q', 4)  # angle quaternion (wxyz)
@@ -174,7 +181,7 @@ class QuadOptimizerMHE:
                     self.x_dot = cs.vertcat(self.x_dot, self.nn_corr_dot)
                     self.w = cs.vertcat(self.w, self.w_corr)
                     # Input Vector
-                    self.y = cs.vertcat(self.p, self.r, self.nn_corr_B)
+                    # self.y = cs.vertcat(self.p, self.r, self.nn_corr_B)
                     self.B_x = np.zeros((self.state_dim, self.n_corr))
                     for i, idx in enumerate(self.nn_output_idx):
                         self.B_x[idx, i] = 1
@@ -189,24 +196,26 @@ class QuadOptimizerMHE:
                 # Parameter for payload mass
                 self.m = cs.MX.sym('m') # payload mass
                 self.m_dot = cs.MX.sym('m_dot')
-                # self.w_m = cs.MX.sym('w_m')
+                self.w_m = cs.MX.sym('w_m')
                 # Include new state to system states
                 self.x = cs.vertcat(self.x, self.m)
                 self.x_dot = cs.vertcat(self.x_dot, self.m_dot)
-                # self.w = cs.vertcat(self.w, self.w_m)
-                if self.use_nn and self.correction_mode == "offline":
+                self.w = cs.vertcat(self.w, self.w_m)
+                if self.use_nn: # and self.correction_mode == "offline":
                     self.B_x = np.append(self.B_x, np.zeros((1, self.n_corr)), axis=0)
                 # Number of States increase
                 self.payload_mass_idx = self.state_dim
+                self.state_dim += 1
                 # self.state_dim += 1
                 self.init_payload_mass = 0
 
-            # Command input vector
-            u1 = cs.MX.sym('u1')
-            u2 = cs.MX.sym('u2')
-            u3 = cs.MX.sym('u3')
-            u4 = cs.MX.sym('u4')
-            self.u = cs.vertcat(u1, u2, u3, u4)
+            # Construct Observation Vector: y
+            self.a_thrust = self.quad.a_thrust(self.u, payload=self.m if self.payload else None)
+            # if self.use_nn and "v" in self.output_features:
+            #     self.a_thrust += self.nn_v_b
+            self.y = cs.vertcat(self.p, self.r, self.a_thrust)
+            if self.use_nn:
+                self.y = cs.vertcat(self.y, self.nn_corr_B)
             
         # Set costs for w
         self.w_cost = np.zeros((self.state_dim))
@@ -225,6 +234,7 @@ class QuadOptimizerMHE:
             v_dyn = v_dot_q(self.a, self.q) - g
             a_dyn = cs.vertcat(0, 0, 0)
             corr_dyn = cs.vertcat()
+            pm_dyn = cs.vertcat()
         elif self.mhe_type == "d":
             v_dyn = self.quad.v_dynamics(self.x, self.u, payload=self.m if self.payload else None)
             a_dyn = cs.vertcat()
@@ -233,11 +243,15 @@ class QuadOptimizerMHE:
                 # corr_dyn = cs.vertcat(0, 0, 0)
             else:
                 corr_dyn = cs.vertcat()
+            if self.payload:
+                pm_dyn = 0
+            else:
+                pm_dyn = cs.vertcat()
 
-        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn) + self.w
+        x_dot = cs.vertcat(p_dyn, q_dyn, v_dyn, r_dyn, a_dyn, corr_dyn, pm_dyn) + self.w
 
-        if self.payload and self.mhe_type == "d":
-            x_dot = cs.vertcat(x_dot, 0)
+        # if self.payload and self.mhe_type == "d":
+        #     x_dot = cs.vertcat(x_dot, 0)
 
         if self.use_nn:
             x_dot = x_dot + cs.mtimes(self.B_x, self.nn_corr_W)
@@ -281,8 +295,8 @@ class QuadOptimizerMHE:
         """
         # Set Arrival Cost as a factor of q_cost
         q0_cost = q_cost * q0_factor
-        if self.payload:
-            q_cost = q_cost[:self.state_dim]
+        # if self.payload:
+        #     q_cost = q_cost[:self.state_dim]
 
         # Number of states and Inputs of the model
         # make acceleration as error

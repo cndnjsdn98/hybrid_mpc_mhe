@@ -1,6 +1,7 @@
 {
     "quad_name": "hummingbird",
     "env": "gazebo",
+    "noise_level": "IMU",
     "t_mpc": 1,
     "n_mpc": 10,
     "gt": false,
@@ -8,5 +9,5 @@
     "model_type": null,
     "model_name": null,
     "correction_mode": null,
-    "payload_m": 0
+    "payload_m": 0.0
 }
