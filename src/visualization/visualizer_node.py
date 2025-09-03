@@ -477,8 +477,10 @@ class VisualizerWrapper:
             mhe_p_error = rmse(self.t_act, self.x_act[:, :3], self.t_est, self.x_est[:, :3])
             mhe_q_error = q_rmse(self.t_act, self.x_act[:, 3:7], self.t_est, self.x_est[:, 3:7])
             mhe_v_error = rmse(self.t_act, self.x_act[:, 7:10], self.t_est, self.x_est[:, 7:10])
-            if self.payload:
+            if self.payload and self.payload_mass_est is not None:
                 mhe_pm_error = rmse(self.t_act[::2], self.payload_mass_gt[:, np.newaxis], self.t_est[::2], self.payload_mass_est[::2, np.newaxis])
+            else:
+                mhe_pm_error = -1
             # MHE costs
             # System Noise
             w_p = np.ones((1,3)) * rospy.get_param("~cost/w_p", default=0.004)
