@@ -18,8 +18,8 @@ python3.9 -m pip install --upgrade pip
 python3.9 -m pip install virtualenv
 
 cd <PATH_TO_PROJECT_DIRECTORY>
-virtualenv node --python=/usr/bin/python3.9
-source ./node/bin/activate
+virtualenv hybrid --python=/usr/bin/python3.9
+source ./hybrid/bin/activate
 ```
 
 ## Install Python Packages
@@ -37,11 +37,12 @@ pip install torch>=2.0 --index-url https://download.pytorch.org/whl/cpu
 ```
 
 3. Install [PyTorch Implementation of Gaussian Process](https://gpytorch.ai/)
-'''
-pip install gpytorch
-'''
 
-4. Install [PyTorch Implementation of Differential ODE Solvers](https://github.com/rtqichen/torchdiffeq)
+```
+pip install gpytorch
+```
+
+5. Install [PyTorch Implementation of Differential ODE Solvers](https://github.com/rtqichen/torchdiffeq)
 ```
 pip install torchdiffeq
 ```
