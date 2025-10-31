@@ -18,7 +18,7 @@ import os
 import sys
 import casadi as cs
 import numpy as np
-import l4casadi as l4c
+# import l4casadi as l4c
 
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 from src.utils.utils import v_dot_q
@@ -65,8 +65,8 @@ class QuadOptimizerMPC:
             self.nn_output_idx = self.nn_params['nn_output_idx']
             self.correction_mode = self.nn_params['correction_mode']
             self.nn_model = self.nn_params['nn_model']
-            if self.correction_mode == "online":
-                self.nn_model = l4c.L4CasADi(self.nn_mdoel, device="cpu")
+            # if self.correction_mode == "online":
+                # self.nn_model = l4c.L4CasADi(self.nn_mdoel, device="cpu")
 
         # Init Casadi variables
         self.init_cs_vectors()
