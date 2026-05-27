@@ -190,6 +190,8 @@ class VisualizerWrapper:
             self.mhe_model_corr = None
         self.payload_mass_gt = np.zeros((0, 1))
         self.payload_mass_est = np.zeros((0, 1))
+        self.mpc_opt_dt = np.zeros((0, 1))
+        self.mhe_opt_dt = np.zeros((0, 1))
 
         # System States
         self.p_act = None
@@ -214,6 +216,8 @@ class VisualizerWrapper:
         quad_mass_gt_topic = rospy.get_param("/quad_mass_change_topic", default="/" + self.quad_name + "/mass_change")
         payload_mass_est_topic  = rospy.get_param("/payload_mass_est_topic", default="/" + self.quad_name + "/payload_mass_est")
         visualizer_status_topic = rospy.get_param("/visualizer_status_topic", default="/visualizer/busy")
+        mpc_opt_dt_topic = rospy.get_param("/mpc_opt_dt_topic", default="/mpc/opt_dt")
+        mhe_opt_dt_topic = rospy.get_param("/mhe_opt_dt_topic", default="/mhe/opt_dt")
         # Subscribers
         self.imu_sub = rospy.Subscriber(imu_topic, Imu, self.imu_callback, queue_size=1, tcp_nodelay=False)
         self.motor_thrust_sub = rospy.Subscriber(motor_thrust_topic, Actuators, self.motor_thrust_callback, queue_size=1, tcp_nodelay=False)
@@ -230,6 +234,8 @@ class VisualizerWrapper:
         self.mhe_model_correction_sub = rospy.Subscriber(mhe_model_correction_topic, ModelCorrection, self.mhe_model_corr_callback, queue_size=10, tcp_nodelay=True)
         self.quad_mass_gt_sub = rospy.Subscriber(quad_mass_gt_topic, Float32, self.quad_mass_gt_callback, queue_size=10, tcp_nodelay=True)
         self.payload_mass_est_sub = rospy.Subscriber(payload_mass_est_topic, Float32, self.payload_mass_est_callback, queue_size=10, tcp_nodelay=True)
+        self.mpc_opt_dt_sub = rospy.Subscriber(mpc_opt_dt_topic, Float32, self.mpc_opt_dt_callback, queue_size=1, tcp_nodelay=True)
+        self.mhe_opt_dt_sub = rospy.Subscriber(mhe_opt_dt_topic, Float32, self.mhe_opt_dt_callback, queue_size=1, tcp_nodelay=True)
 
         # Publishers
         self.visualizer_status_pub = rospy.Publisher(visualizer_status_topic, Bool, queue_size=1)
@@ -267,6 +273,10 @@ class VisualizerWrapper:
         while len(self.motor_thrusts) < self.seq_len * 2:
             self.motor_thrusts = np.append(self.motor_thrusts, self.motor_thrusts[-1][np.newaxis], axis=0)
         self.motor_thrusts = self.motor_thrusts[:self.seq_len * 2]
+
+        while len(self.mpc_opt_dt) < self.seq_len:
+            self.mpc_opt_dt = np.append(self.mpc_opt_dt, self.mpc_opt_dt[-1])
+        self.mpc_opt_dt = self.mpc_opt_dt[:self.seq_len]
 
         if len(self.x_est) > 0:
             while len(self.x_est) < self.seq_len * 2:
@@ -323,7 +333,11 @@ class VisualizerWrapper:
         self.x_act = self.x_act[:self.seq_len * 2]
         self.t_act = self.t_act[:self.seq_len * 2]
         mpc_tracking_error = rmse(self.t_ref, self.x_ref[:, :3], self.t_ref, state_in[:, :3])
-        
+        # Compute MPC optimization time stats
+        mpc_mean_opt_dt = np.mean(self.mpc_opt_dt) * 1000
+        mpc_max_opt_dt = np.max(self.mpc_opt_dt) * 1000
+        mpc_min_opt_dt = np.min(self.mpc_opt_dt) * 1000
+
         # Organize arrays to dictionary
         mpc_dict = {
             "t": mpc_t,
@@ -339,7 +353,8 @@ class VisualizerWrapper:
             "input_in": u_in,
             "w_control": self.w_control,
             "state_in_Body": state_in_B, 
-            "rmse": np.array([mpc_tracking_error])[np.newaxis]
+            "rmse": np.array([mpc_tracking_error])[np.newaxis],
+            "opt_dt": self.mpc_opt_dt,
         }
         v_max = np.max(np.linalg.norm(state_in[:, 7:10], axis=1))
 
@@ -416,7 +431,10 @@ class VisualizerWrapper:
             else:
                 self.payload_mass_gt = None
                 self.payload_mass_est = None
-                
+            while len(self.mhe_opt_dt) < self.seq_len * 2:
+                self.mhe_opt_dt = np.append(self.mhe_opt_dt, self.mhe_opt_dt[-1])
+            self.mhe_opt_dt = self.mhe_opt_dt[:self.seq_len]
+
             mhe_error = np.zeros_like(self.x_est)
             a_est_b_traj = np.zeros((len(self.x_est), 3))
             a_thrust_traj = np.zeros((len(self.x_est), 3))
@@ -481,6 +499,11 @@ class VisualizerWrapper:
                 mhe_pm_error = rmse(self.t_act[::2], self.payload_mass_gt[:, np.newaxis], self.t_est[::2], self.payload_mass_est[::2, np.newaxis])
             else:
                 mhe_pm_error = -1
+            # Compute MHE optimization time stats
+            mhe_mean_opt_dt = np.mean(self.mhe_opt_dt) * 1000
+            mhe_max_opt_dt = np.max(self.mhe_opt_dt) * 1000
+            mhe_min_opt_dt = np.min(self.mhe_opt_dt) * 1000
+            
             # MHE costs
             # System Noise
             w_p = np.ones((1,3)) * rospy.get_param("~cost/w_p", default=0.004)
@@ -518,6 +541,7 @@ class VisualizerWrapper:
                 "v_p": v_p,
                 "v_r": v_r,
                 "v_a": v_a,
+                "opt_dt": self.mhe_opt_dt,
             } 
             if self.payload:
                 mhe_dict["payload_mass_est"] = self.payload_mass_est
@@ -605,6 +629,9 @@ class VisualizerWrapper:
         self.motor_thrusts = np.zeros((0, 4))
         self.w_control = np.zeros((0, 3))
         self.collective_thrusts = np.zeros((0, 1))
+        self.mpc_opt_dt = np.zeros(((0, 1)))
+        self.mhe_opt_dt = np.zeros(((0, 1)))
+        
         # Init vectors to save model corrections
         if self.mhe_type == "d" and self.mhe_use_nn and self.mhe_correction_mode == "offline":
             self.mhe_model_corr = np.zeros((0, len(self.mhe_nn_output_idx)))
@@ -623,12 +650,14 @@ class VisualizerWrapper:
         self.a_meas = None
         rospy.loginfo("Recording Complete.")
         rospy.loginfo("MPC: tracking RMSE: %.5f m. Max Vel: %.3f m/s" % (mpc_tracking_error, v_max))
+        rospy.loginfo("MPC: Mean opt. time: %.3f ms. Max opt. time: %.3f ms. Min opt. time: %.3f ms"%(mpc_mean_opt_dt, mpc_max_opt_dt, mpc_min_opt_dt))
         if mhe:
             rospy.loginfo("MHE: p Estimation RMSE: %.5f m" % (mhe_p_error))
             rospy.loginfo("MHE: q Estimation RMSE: %.5f deg" % (np.rad2deg(mhe_q_error)))
             rospy.loginfo("MHE: v Estimation RMSE: %.5f m/s" % (mhe_v_error))
             if self.payload:
                 rospy.loginfo("MHE: M Estimation RMSE: %.5f kg" % (mhe_pm_error))
+            rospy.loginfo("MHE: Mean opt. time: %.3f ms. Max opt. time: %.3f ms. Min opt. time: %.3f ms"%(mhe_mean_opt_dt, mhe_max_opt_dt, mhe_min_opt_dt))
 
         self.saving_data = False
     
@@ -780,6 +809,16 @@ class VisualizerWrapper:
         if not self.record:
             return
         self.payload_mass_est = np.append(self.payload_mass_est, msg.data)
+
+    def mpc_opt_dt_callback(self, msg):
+        if not self.record:
+            return
+        self.mpc_opt_dt = np.append(self.mpc_opt_dt, msg.data)
+
+    def mhe_opt_dt_callback(self, msg):
+        if not self.record:
+            return
+        self.mhe_opt_dt = np.append(self.mhe_opt_dt, msg.data)
 
     def check_use_gt(self, event):
         use_groundtruth = rospy.get_param("/mpc/use_groundtruth", default=None)

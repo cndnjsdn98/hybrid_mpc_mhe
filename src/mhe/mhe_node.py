@@ -134,7 +134,7 @@ class MHENode:
         acceleration_est_topic = rospy.get_param("/acceleration_est_topic", default="/" + self.quad_name + "/acceleration_est") 
         sensor_measurement_topic = rospy.get_param("/sensor_measurement_topic", default="/" + self.quad_name + "/sensor_measurement") 
         payload_mass_est_topic = rospy.get_param("/payload_mass_est_topic", default="/" + self.quad_name + "/payload_mass_est")
-        
+        mhe_opt_dt_topic = rospy.get_param("/mhe_opt_dt_topic", default="/mhe/opt_dt")
         # Publishers
         self.state_est_pub = rospy.Publisher(state_est_topic, Odometry, queue_size=10, tcp_nodelay=True)
         self.acceleration_est_pub = rospy.Publisher(acceleration_est_topic, Imu, queue_size=10, tcp_nodelay=True)
@@ -143,6 +143,7 @@ class MHENode:
         if self.use_nn and self.correction_mode == "offline":
             model_correction_topic = rospy.get_param("~model_correction_topic", default="/" + self.quad_name + "/mhe/model_correction")
             self.model_correction_pub = rospy.Publisher(model_correction_topic, ModelCorrection, queue_size=10, tcp_nodelay=True)
+        self.mhe_opt_dt_pub = rospy.Publisher(mhe_opt_dt_topic, Float32, queue_size=1, tcp_nodelay=True)
 
     def init_subscribers(self):
         # Subscriber topic names
@@ -380,6 +381,7 @@ class MHENode:
         self.mhe.set_history_trajectory(self.y_hist_cp, self.u_hist_cp)
         if (self.mhe.solve_mhe() == 0):
             self.x_est = self.mhe.get_state_est()
+            opt_dt = self.mhe.get_opt_dt()
             self.opt_dt += self.mhe.get_opt_dt()
             self.mhe_idx += 1
         else:
@@ -432,6 +434,11 @@ class MHENode:
         if self.payload:
             self.payload_mass_est = self.mhe.get_mass_est()
             self.payload_mass_est_pub.publish(Float32(self.payload_mass_est))
+        opt_dt_msg = Float32()
+        opt_dt_msg.data = opt_dt
+        self.mhe_opt_dt_pub.publish(opt_dt_msg)
+
+        # Publish Optimization time
 
         self.mhe_seq_num += 1
 

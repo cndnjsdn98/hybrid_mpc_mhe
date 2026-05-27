@@ -126,7 +126,7 @@ class MPCNode:
 
         # Initialize MPC Variables
         self.mpc_idx = 0
-        self.opt_dt = 0
+        # self.mean_opt_dt = 0
 
         # Initialize MPC Thread
         self.mpc_thread = threading.Thread()
@@ -143,6 +143,7 @@ class MPCNode:
         status_topic = rospy.get_param("/mpc_status_topic", default="/mpc/busy")
         # control_gz_topic = rospy.get_param("~control_gz_topic", default="/" + self.quad_name + "/autopilot/control_command_input")
         quad_mass_change_topic = rospy.get_param("/quad_mass_change_topic", default="/" + self.quad_name + "/mass_change")
+        mpc_opt_dt_topic = rospy.get_param("/mpc_opt_dt_topic", default="/mpc/opt_dt")
 
         # Publishers
         if self.env == "gazebo":
@@ -156,6 +157,7 @@ class MPCNode:
             self.quad_mass_change_pub = rospy.Publisher(quad_mass_change_topic, Float32, queue_size=1, tcp_nodelay=True) # Only works for Gazebo
             # Ensure Quad mass is correct mass
             self.quad_mass_change_pub.publish(Float32(self.base_mass))
+        self.mpc_opt_dt_pub = rospy.Publisher(mpc_opt_dt_topic, Float32, queue_size=1, tcp_nodelay=True)
 
     def init_rosservice(self):
         set_mode_srvc = rospy.get_param("/set_mode_srvc", default="/mavros/set_mode")
@@ -332,10 +334,10 @@ class MPCNode:
                 if (not self.ground_level):
                     rospy.loginfo("Vehicle at Ground Level")
                     self.ground_level = True
-                    if self.ref_gen_node_name in rosnode.get_node_names():
-                        print(rosnode.get_node_names())
-                    else:
-                        self.no_more_ref = True
+                    # if self.ref_gen_node_name in rosnode.get_node_names():
+                    #     print(rosnode.get_node_names())
+                    # else:
+                    #     self.no_more_ref = True   
                 self.ref_received = False
                 self.ref_traj_name = None
                 self.ref_len = None
@@ -387,7 +389,7 @@ class MPCNode:
             if (quaternion_state_mse(np.array(self.x), self.x_ref[0, :], mask) < self.init_thr and not self.x_initial_reached): 
                 # Initial Point reached
                 self.x_initial_reached = True
-                self.opt_dt = 0
+                # self.mean_opt_dt = 0
                 rospy.loginfo("Reached initial position of trajectory.")
                 # Begin recording
                 msg = Bool()
@@ -456,9 +458,9 @@ class MPCNode:
             if self.payload:
                 self.quad_mass_change_pub.publish(Float32(self.base_mass))
             # Compute optimization dt
-            self.opt_dt /= self.mpc_idx
-            self.opt_dt *= 1000
-            rospy.loginfo("Tracking complete. Mean MPC opt. time: %.3f ms"%self.opt_dt)
+            # self.mean_opt_dt /= self.mpc_idx
+            # self.mean_opt_dt *= 1000
+            rospy.loginfo("Tracking complete.")# Mean MPC opt. time: %.3f ms"%self.mean_opt_dt)
             self.mpc_idx += 1
             # Lower drone to ground
             self.land_override = True
@@ -551,7 +553,8 @@ class MPCNode:
             if (self.quad_opt.solve_mpc(self.x, nn_corr=self.nn_corr_i, 
                                         payload_m=self.payload_mass_est) == 0):
                 x_opt, u_opt = self.quad_opt.get_controls()
-                self.opt_dt += self.quad_opt.get_opt_dt()
+                opt_dt = self.quad_opt.get_opt_dt()
+                # self.mean_opt_dt += opt_dt
             else:
                 rospy.logwarn("MPC Optimization was not sucessful.")
                 return
@@ -600,6 +603,10 @@ class MPCNode:
         motor_thrust_msg.header = Header()
         motor_thrust_msg.angular_velocities = u_opt[0]
         self.motor_thrust_pub.publish(motor_thrust_msg)
+        # Publish Optimization time
+        opt_dt_msg = Float32()
+        opt_dt_msg.data = opt_dt
+        self.mpc_opt_dt_pub.publish(opt_dt_msg)
     
     def payload_mass_est_callback(self, msg):
         self.payload_mass_est = msg.data

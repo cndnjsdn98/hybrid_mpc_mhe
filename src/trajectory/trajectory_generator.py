@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ExpSineSquared
+import mpl_toolkits.mplot3d.art3d as art3d
+import os
 
 def draw_poly(traj, u_traj, t, target_points=None, target_t=None):
     """
@@ -28,6 +30,66 @@ def draw_poly(traj, u_traj, t, target_points=None, target_t=None):
     v_traj = traj[:, 7:10]
     r_traj = traj[:, 10:]
 
+    # -------------------- For plotting Training Tajectory for publication --------------------
+    # SMALL_SIZE = 12
+    # MEDIUM_SIZE = 27 #14
+    # BIGGER_SIZE = 35 #17
+    # LINE_SPACING = 0.4
+    # plt.rcParams.update({
+    #     'text.usetex': True,
+    #     "font.family": "serif",
+    #     "font.serif": ["Computer Modern Roman"],
+    #     'text.latex.preamble': r'\usepackage{amsmath} \usepackage{fontenc}'
+    # })
+    # plt.rcParams['axes.labelpad']=15
+    # fig = plt.figure(figsize=[9,7])
+    # ax = plt.axes(projection='3d')
+
+    # plt.plot(p_traj[:, 0], p_traj[:, 1], p_traj[:, 2])
+    # # if target_points is not None:
+    #     # plt.plot(target_points[0, :], target_points[1, :], target_points[2, :], 'bo')
+    # # plt.title('Target position trajectory')
+    # ax.set_xlabel('\n'+ r'$\boldsymbol{p_x}$ \textbf{[m]}', size=BIGGER_SIZE, linespacing=LINE_SPACING)
+    # ax.set_ylabel('\n'+ r'$\boldsymbol{p_y}$ \textbf{[m]}', size=BIGGER_SIZE, linespacing=LINE_SPACING)
+    # ax.set_zlabel('\n'+ r'$\boldsymbol{p_z}$ \textbf{[m]}', size=BIGGER_SIZE, linespacing=LINE_SPACING)
+    # ax.view_init(elev=20, azim=-56)
+    # ax.tick_params(axis='both', which='major', labelsize=MEDIUM_SIZE)
+    # ax.xaxis.labelpad=15
+    # ax.yaxis.labelpad=10
+    # ax.zaxis.labelpad=7
+    # def lims(mplotlims):
+    #     scale = 1.0
+    #     offset = (mplotlims[1] - mplotlims[0])*scale
+    #     return mplotlims[1] - offset, mplotlims[0] + offset
+    # xlims, ylims, zlims = lims(ax.get_xlim()), lims(ax.get_ylim()), lims(ax.get_zlim())
+    # i = np.array([xlims[0], ylims[0], zlims[0]])
+    # f = np.array([xlims[0], ylims[0], zlims[1]])
+    # p = art3d.Poly3DCollection(np.array([[i, f]]))
+    # p.set_color('black')
+    # ax.add_collection3d(p)
+    # ax.xaxis.pane.set_edgecolor('#000000')
+    # ax.yaxis.pane.set_edgecolor('#000000')
+    # ax.zaxis.pane.set_edgecolor('#000000')
+    # ax.xaxis.pane.set_alpha(1)
+    # ax.yaxis.pane.set_alpha(1)
+    # # ax.set_xticks(np.arange(np.floor(xlims[0]), np.ceil(xlims[-1]), 2))
+    # # ax.set_yticks(np.arange(np.floor(ylims[0]), np.ceil(ylims[-1]), 2))
+    # # ax.set_zticks(np.arange(np.floor(zlims[0]), np.ceil(zlims[-1]), 1))
+    # ax.set_xlim(xlims)
+    # ax.set_ylim(ylims)
+    # ax.set_zlim(zlims)
+    # plt.tight_layout()
+    # plt.show()
+
+    # # Save image
+    # curr_dir_path = os.path.dirname(os.path.realpath(__file__))
+    # save_fig = os.path.join(curr_dir_path, "..", "traj.pdf")
+    # fig.savefig(save_fig, dpi=None, facecolor='w', edgecolor='w',
+    #             orientation='portrait', format='pdf',
+    #             transparent=False, bbox_inches=None, metadata=None)
+    # plt.close(fig)  
+    # ---------------------------------------------------------------------------------- #
+    
     plt_traj = [p_traj, v_traj]
 
     fig = plt.figure()
